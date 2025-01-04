@@ -2,8 +2,10 @@
 
 import argparse
 import exifread
-from geopy.geocoders import Nominatim
 import pendulum
+from os import walk
+from os.path import isfile
+from InquirerPy import inquirer
 
 
 def extract_exif_info(image_path: str) -> dict:
@@ -52,30 +54,36 @@ def convert_to_degrees(value):
 
 
 def main(args):
-    exif_tags = extract_exif_info(args.photo_file)
-
-    lat, lon = extract_gps(exif_tags)
-
-    date_object = extract_datetime(exif_tags)
-
-    if date_object:
-        print(f"Taken: {date_object}")
-
-    if lat and lon:
-        print(f"Latitude: {lat}, Longitude: {lon}")
-
-        geolocator = Nominatim(user_agent=args.user_agent)
-
-        print(f"Now: {pendulum.now()}")
-
-        location = geolocator.reverse((lat, lon))
-
-        if location:
-            print("Locations:", location.raw)
-        else:
-            print("No locations returned for these coordinates.")
+    files = []
+    if args.file:
+        files.extend(args.file)
+    elif args.directory:
+        for (dirpath, _, filenames) in walk(args.directory):
+            for file in filenames:
+                files.append(f"{dirpath}/{file}")
     else:
-        print("No GPS info found.")
+        path = inquirer.text(message="Enter a file or a directory").execute()
+        if isfile(path):
+            files.extend(path)
+        else:
+            for (dirpath, _, filenames) in walk(path):
+                for file in filenames:
+                    files.append(f"{dirpath}/{file}")
+
+    for file in files:
+        exif_tags = extract_exif_info(file)
+
+        lat, lon = extract_gps(exif_tags)
+
+        date_object = extract_datetime(exif_tags)
+
+        if date_object:
+            print(f"Taken: {date_object}")
+
+        if lat and lon:
+            print(f"Latitude: {lat}, Longitude: {lon}")
+        else:
+            print("No GPS info found.")
 
 
 def parse_args():
@@ -84,8 +92,11 @@ def parse_args():
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter, description=description
     )
-    parser.add_argument("photo_file", help="The file location of a photo to analyze")
-    parser.add_argument("user_agent", help="The user agent to use for Nominatim")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--file","-f", help="The file location of a photo to analyze")
+    group.add_argument("--directory","-d", help="A directory of photos to analyze")
+    parser.add_argument("--location","-l",action='store_true',help="Group by location instead of date")
+    
     args = parser.parse_args()
 
     return args
