@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from InquirerPy import inquirer
 import argparse
 import exifread
 from geopy.geocoders import Nominatim
