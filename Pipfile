@@ -5,9 +5,10 @@ name = "pypi"
 
 [packages]
 argparse = "*"
-exifread = "*"
-geopy = "*"
 pendulum = "*"
+tinydb = "*"
+geopy = "*"
+exifread = "*"
 
 [dev-packages]
 

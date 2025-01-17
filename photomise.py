@@ -2,8 +2,10 @@
 
 import argparse
 import exifread
+from tinydb import TinyDB, Query
+from geopy.distance import great_circle
 import pendulum
-from os import walk
+from os import walk, remove
 from os.path import isfile
 from InquirerPy import inquirer
 
@@ -53,8 +55,28 @@ def convert_to_degrees(value):
     return d + (m / 60.0) + (s / 3600.0)
 
 
+def find_location(db, latitude, longitude, max_distance_km=0.5):
+    closest_location = None
+    closest_distance = max_distance_km
+
+    for item in db.all():
+        location_coords = (item['latitude'], item['longitude'])
+        distance = great_circle((latitude, longitude), location_coords).kilometers
+
+        if distance < closest_distance:
+            closest_location = item['name']
+            closest_distance = distance
+
+    return closest_location
+
+def item_duplicate(date_object,lat,lon)
+
 def main(args):
     files = []
+
+    location_db = TinyDB("locations.json")
+    items_db = TinyDB("items.json")
+
     if args.file:
         files.extend(args.file)
     elif args.directory:
@@ -82,8 +104,24 @@ def main(args):
 
         if lat and lon:
             print(f"Latitude: {lat}, Longitude: {lon}")
-        else:
-            print("No GPS info found.")
+            location_name = find_location(location_db, lat, lon)
+            if location_name:
+                print(f"Location: {location_name}")
+            else:
+                location_name = inquirer.text(f"Please enter a location name for {lat},{lon}").execute()
+                location_db.insert({'name': location_name, 'latitude': lat, 'longitude': lon})
+            item_name = inquirer.text(f"Please name this item: {file} - {date_object}").execute()
+
+            if item_duplicate(file,date_object,lat,lon):
+                if inquirer.confirm(f"This item appears to be a duplicate. Delete it?").execute():
+                    if isfile(file):
+                        remove(file)
+                        print(f"{file} has been deleted.")
+                    else:
+                        print(f"Could not find {file}")
+            else:
+                print("No GPS info found.")
+           
 
 
 def parse_args():
