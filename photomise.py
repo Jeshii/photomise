@@ -60,16 +60,26 @@ def find_location(db, latitude, longitude, max_distance_km=0.5):
     closest_distance = max_distance_km
 
     for item in db.all():
-        location_coords = (item['latitude'], item['longitude'])
+        location_coords = (item["latitude"], item["longitude"])
         distance = great_circle((latitude, longitude), location_coords).kilometers
 
         if distance < closest_distance:
-            closest_location = item['name']
+            closest_location = item["name"]
             closest_distance = distance
 
     return closest_location
 
-def item_duplicate(date_object,lat,lon)
+
+def item_duplicate(db, date_object, lat, lon):
+    for item in db.all():
+        if (
+            item["date"] == date_object
+            and item["latitude"] == lat
+            and item["longitude"] == lon
+        ):
+            return True
+    return False
+
 
 def main(args):
     files = []
@@ -80,7 +90,7 @@ def main(args):
     if args.file:
         files.extend(args.file)
     elif args.directory:
-        for (dirpath, _, filenames) in walk(args.directory):
+        for dirpath, _, filenames in walk(args.directory):
             for file in filenames:
                 files.append(f"{dirpath}/{file}")
     else:
@@ -88,7 +98,7 @@ def main(args):
         if isfile(path):
             files.extend(path)
         else:
-            for (dirpath, _, filenames) in walk(path):
+            for dirpath, _, filenames in walk(path):
                 for file in filenames:
                     files.append(f"{dirpath}/{file}")
 
@@ -108,12 +118,20 @@ def main(args):
             if location_name:
                 print(f"Location: {location_name}")
             else:
-                location_name = inquirer.text(f"Please enter a location name for {lat},{lon}").execute()
-                location_db.insert({'name': location_name, 'latitude': lat, 'longitude': lon})
-            item_name = inquirer.text(f"Please name this item: {file} - {date_object}").execute()
+                location_name = inquirer.text(
+                    f"Please enter a location name for {lat},{lon}"
+                ).execute()
+                location_db.insert(
+                    {"name": location_name, "latitude": lat, "longitude": lon}
+                )
+            item_name = inquirer.text(
+                f"Please name this item: {file} - {date_object}"
+            ).execute()
 
-            if item_duplicate(file,date_object,lat,lon):
-                if inquirer.confirm(f"This item appears to be a duplicate. Delete it?").execute():
+            if item_duplicate(file, date_object, lat, lon):
+                if inquirer.confirm(
+                    "This item appears to be a duplicate. Delete it?"
+                ).execute():
                     if isfile(file):
                         remove(file)
                         print(f"{file} has been deleted.")
@@ -121,7 +139,6 @@ def main(args):
                         print(f"Could not find {file}")
             else:
                 print("No GPS info found.")
-           
 
 
 def parse_args():
@@ -131,10 +148,15 @@ def parse_args():
         formatter_class=argparse.RawDescriptionHelpFormatter, description=description
     )
     group = parser.add_mutually_exclusive_group()
-    group.add_argument("--file","-f", help="The file location of a photo to analyze")
-    group.add_argument("--directory","-d", help="A directory of photos to analyze")
-    parser.add_argument("--location","-l",action='store_true',help="Group by location instead of date")
-    
+    group.add_argument("--file", "-f", help="The file location of a photo to analyze")
+    group.add_argument("--directory", "-d", help="A directory of photos to analyze")
+    parser.add_argument(
+        "--location",
+        "-l",
+        action="store_true",
+        help="Group by location instead of date",
+    )
+
     args = parser.parse_args()
 
     return args
