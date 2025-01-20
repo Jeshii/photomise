@@ -8,6 +8,7 @@ import pendulum
 from os import walk, remove
 from os.path import isfile
 from InquirerPy import inquirer
+from rich.console import Console
 
 
 def extract_exif_info(image_path: str) -> dict:
@@ -83,6 +84,7 @@ def item_duplicate(db, date_object, lat, lon):
 
 def main(args):
     files = []
+    console = Console()
 
     location_db = TinyDB("locations.json")
     items_db = TinyDB("items.json")
@@ -110,14 +112,16 @@ def main(args):
         date_object = extract_datetime(exif_tags)
 
         if date_object:
-            print(f"Taken: {date_object}")
+            console.print(f"Taken: {date_object}")
 
         if lat and lon:
-            print(f"Latitude: {lat}, Longitude: {lon}")
+            console.print(f"Latitude: {lat}, Longitude: {lon}")
             location_name = find_location(location_db, lat, lon)
             if location_name:
-                print(f"Location: {location_name}")
+                console.print(f"Location: {location_name}")
             else:
+                if args.link:
+                    console.print(f"[link={args.link}{lat},{lon}]Helper link[/link]")
                 location_name = inquirer.text(
                     f"Please enter a location name for {lat},{lon}"
                 ).execute()
@@ -145,9 +149,9 @@ def main(args):
                 # Save item
                 items_db.insert(
                     {
-                        "item": item_name, 
-                        "latitude": lat, 
-                        "longitude": lon, 
+                        "item": item_name,
+                        "latitude": lat,
+                        "longitude": lon,
                         "date": date_object,
                     }
                 )
@@ -169,6 +173,11 @@ def parse_args():
         "-i",
         action="store_true",
         help="Ask for item names",
+    )
+    parser.add_argument(
+        "--link",
+        "-l",
+        help="Supply a link to display with lat/lon",
     )
 
     args = parser.parse_args()
