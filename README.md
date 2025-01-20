@@ -1,0 +1,1 @@
+Photomise is a script to rapidly process photos into known locations and dates. The idea is that you have one photo per event and want to make sure these events are properly location and time stamped.
