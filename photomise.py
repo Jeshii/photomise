@@ -124,9 +124,6 @@ def main(args):
                 location_db.insert(
                     {"name": location_name, "latitude": lat, "longitude": lon}
                 )
-            item_name = inquirer.text(
-                f"Please name this item: {file} - {date_object}"
-            ).execute()
 
             if item_duplicate(file, date_object, lat, lon):
                 if inquirer.confirm(
@@ -138,7 +135,24 @@ def main(args):
                     else:
                         print(f"Could not find {file}")
             else:
-                print("No GPS info found.")
+                if args.item:
+                    item_name = inquirer.text(
+                        f"Please name this item: {file} - {date_object}"
+                    ).execute()
+                else:
+                    item_name = f"{file}-{date_object}"
+
+                # Save item
+                items_db.insert(
+                    {
+                        "item": item_name, 
+                        "latitude": lat, 
+                        "longitude": lon, 
+                        "date": date_object,
+                    }
+                )
+        else:
+            print("No GPS info found.")
 
 
 def parse_args():
@@ -151,10 +165,10 @@ def parse_args():
     group.add_argument("--file", "-f", help="The file location of a photo to analyze")
     group.add_argument("--directory", "-d", help="A directory of photos to analyze")
     parser.add_argument(
-        "--location",
-        "-l",
+        "--item",
+        "-i",
         action="store_true",
-        help="Group by location instead of date",
+        help="Ask for item names",
     )
 
     args = parser.parse_args()
