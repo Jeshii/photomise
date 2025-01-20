@@ -12,6 +12,7 @@ exifread = "*"
 rich = "*"
 atproto = "*"
 keyring = "*"
+piexif = "*"
 
 [dev-packages]
 
