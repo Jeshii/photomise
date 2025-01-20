@@ -1,2 +1,5 @@
 # Ignore all files ending with .json
 *.json
+
+# Ignore ds store
+.DS_Store

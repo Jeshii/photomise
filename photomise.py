@@ -5,8 +5,8 @@ import exifread
 from tinydb import TinyDB, Query
 from geopy.distance import great_circle
 import pendulum
-from os import walk, remove
-from os.path import isfile
+from os import walk, remove, rename
+from os.path import isfile, splitext
 from InquirerPy import inquirer
 from rich.console import Console
 
@@ -71,48 +71,98 @@ def find_location(db, latitude, longitude, max_distance_km=0.5):
     return closest_location
 
 
-def item_duplicate(db, date_object, lat, lon):
+def same_event(db: TinyDB, date: pendulum, max_time_delta_in_hours: int = 1):
     for item in db.all():
-        if (
-            item["date"] == date_object
-            and item["latitude"] == lat
-            and item["longitude"] == lon
-        ):
+        db_date = pendulum.from_timestamp(item["date"])
+        time_delta = date.diff(db_date).in_hours()
+
+        if time_delta < max_time_delta_in_hours:
             return True
+
     return False
 
 
+def item_duplicate(db, date_object, lat, lon):
+    Search = Query()
+    result = db.search(
+        (Search["date"] == date_object.timestamp())
+        & (Search["latitude"] == lat)
+        & (Search["longitude"] == lon)
+    )
+    return len(result) > 0
+
+
+def get_non_hidden_files(directory):
+    for dirpath, _, filenames in walk(directory):
+        for filename in filenames:
+            if not filename.startswith(".") and not filename.endswith(
+                ".json"
+            ):  # Check if filename does not start with a dot
+                yield dirpath, filename
+
+
+def remove_file(console: Console, file_path: str):
+    if isfile(file_path):
+        remove(file_path)
+        console.print(f"{file_path} has been deleted.")
+    else:
+        console.print(f"Could not find {file_path}")
+
+
+def rename_file(console: Console, dir: str, file: str, new_name: str):
+    path = f"{dir}/{file}"
+    new_path = f"{dir}/{new_name}"
+    if isfile(path):
+        rename(path, new_path)
+        console.print(f"{path} has been renamed to {new_path}.")
+    else:
+        console.print(f"Could not find {path}")
+
+
+def get_image_aspect_ratio(image_path):
+    with open(image_path, "rb") as f:
+        tags = exifread.process_file(f)
+
+    try:
+        image_width = int(tags["Image Width"].values[0])
+        image_height = int(tags["Image Height"].values[0])
+        return (image_width, image_height)
+    except KeyError:
+        return None
+
+
 def main(args):
-    files = []
     console = Console()
 
-    location_db = TinyDB("locations.json")
-    items_db = TinyDB("items.json")
+    if not args.directory:
+        args.directory = inquirer.text(message="Enter a file or a directory").execute()
 
-    if args.file:
-        files.extend(args.file)
-    elif args.directory:
-        for dirpath, _, filenames in walk(args.directory):
-            for file in filenames:
-                files.append(f"{dirpath}/{file}")
+    if args.same:
+        location_db = TinyDB(f"{args.directory}/locations.json")
+        item_db = TinyDB(f"{args.directory}/items.json")
     else:
-        path = inquirer.text(message="Enter a file or a directory").execute()
-        if isfile(path):
-            files.extend(path)
-        else:
-            for dirpath, _, filenames in walk(path):
-                for file in filenames:
-                    files.append(f"{dirpath}/{file}")
+        location_db = TinyDB("locations.json")
+        item_db = TinyDB("items.json")
 
-    for file in files:
-        exif_tags = extract_exif_info(file)
+    for dir, file in get_non_hidden_files(args.directory):
+        file_path = f"{dir}/{file}"
+        console.print(f"Checking {file}...")
+        try:
+            exif_tags = extract_exif_info(file_path)
 
-        lat, lon = extract_gps(exif_tags)
+            lat, lon = extract_gps(exif_tags)
 
-        date_object = extract_datetime(exif_tags)
+            date_object = extract_datetime(exif_tags)
+        except Exception:
+            console.print_exception()
 
         if date_object:
             console.print(f"Taken: {date_object}")
+            if same_event(item_db, date_object):
+                if inquirer.confirm(
+                    "This item appears to be from an already registered event. Delete it?"
+                ).execute():
+                    remove_file(console, file_path)
 
         if lat and lon:
             console.print(f"Latitude: {lat}, Longitude: {lon}")
@@ -129,34 +179,41 @@ def main(args):
                     {"name": location_name, "latitude": lat, "longitude": lon}
                 )
 
-            if item_duplicate(file, date_object, lat, lon):
+            if item_duplicate(item_db, date_object, lat, lon):
                 if inquirer.confirm(
                     "This item appears to be a duplicate. Delete it?"
                 ).execute():
-                    if isfile(file):
-                        remove(file)
-                        print(f"{file} has been deleted.")
-                    else:
-                        print(f"Could not find {file}")
+                    remove_file(console, file_path)
             else:
                 if args.item:
                     item_name = inquirer.text(
                         f"Please name this item: {file} - {date_object}"
                     ).execute()
                 else:
-                    item_name = f"{file}-{date_object}"
+                    item_name = f"{file.split(".")[0]}-{date_object.format("YYYYMMDD")}"
 
                 # Save item
-                items_db.insert(
+                item_db.insert(
                     {
                         "item": item_name,
                         "latitude": lat,
                         "longitude": lon,
-                        "date": date_object,
+                        "location": location_name,
+                        "date": date_object.timestamp(),
                     }
                 )
+
+                if args.rename:
+                    extension = splitext(file_path)[1]
+                    if "." not in extension:
+                        extension = f".{extension}"
+                    new_name = (
+                        f"{item_name}-{location_name.replace(" ","_")}{extension}"
+                    )
+                    rename_file(console, dir, file, new_name)
+
         else:
-            print("No GPS info found.")
+            console.print("No GPS info found.")
 
 
 def parse_args():
@@ -165,9 +222,7 @@ def parse_args():
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter, description=description
     )
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument("--file", "-f", help="The file location of a photo to analyze")
-    group.add_argument("--directory", "-d", help="A directory of photos to analyze")
+    parser.add_argument("--directory", "-d", help="A directory of photos to analyze")
     parser.add_argument(
         "--item",
         "-i",
@@ -178,6 +233,18 @@ def parse_args():
         "--link",
         "-l",
         help="Supply a link to display with lat/lon",
+    )
+    parser.add_argument(
+        "--rename",
+        "-r",
+        action="store_true",
+        help="Rename file based on provided info",
+    )
+    parser.add_argument(
+        "--same",
+        "-s",
+        action="store_true",
+        help="Store DB in same folder as photos",
     )
 
     args = parser.parse_args()
