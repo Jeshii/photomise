@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
-from tinydb import TinyDB, Query
+from tinydb import Query
 import pendulum
 from InquirerPy import inquirer
 from rich.console import Console
@@ -13,6 +13,8 @@ import termios
 import tty
 import piexif
 import photomise as base
+import configparser
+import random
 
 
 def get_password_from_keyring(logger, user: str):
@@ -42,51 +44,107 @@ def get_image_aspect_ratio(image_path: str) -> tuple:
         return None
 
 
+def get_users(config):
+    try:
+        users = config["Accounts"].get("Bluesky") 
+        return users.split(',') 
+    except (configparser.NoSectionError, configparser.NoOptionError, AttributeError):
+        config["Accounts"]["Bluesky"] = ""
+        username = inquirer.text(message="Enter your Bluesky username").execute()
+        config["Accounts"]["Bluesky"] = username
+        return config["Accounts"]["Bluesky"].split(',') 
+    
+def fix_bluesky(current):
+    return current.replace("@", "").strip()
+
+def add_user(config):
+    users = get_users(config)
+    new_user = inquirer.text(message="Enter your Bluesky username",filter=fix_bluesky).execute()
+    users.append(new_user)
+    config["Accounts"]["Bluesky"] = ",".join(users)
+    return new_user
+
 def main(args):
     client = Client()
+    console = Console()
+    config = base.get_config()
+    event_db = base.get_event_db(config["Paths"]["database_dir"])
+    Event = Query()
     logging.basicConfig(level=logging.DEBUG)
     logger = logging.getLogger(__name__)
+    users = get_users(config)
 
     if not args.user:
-        args.user = inquirer.text(message="Enter username").execute()
+        user_list = users
+        user_list.append("New User")
+        args.user = inquirer.select(message="Select a user", choices=user_list).execute()
+        if args.user == "New User":
+            args.user = add_user(config)
+    elif args.user not in users:
+        args.user = add_user(args.user)
+
     if not args.random:
-        Event = Query()
-        event = event_db.get(Event.event == event_name)
+        event_names = [event["event"] for event in event_db.search(Event)]
+        if not event_names:
+            console.print("[bold red]No events found. Please run photomise first!")
+            return
+        event_name = inquirer.select(
+            message="Choose an event to post", choices=event_names
+        ).execute()
+    else:
+        all_events = event_db.search(Event.posted == [])
+
+        if all_events:
+            random_event = random.choice(all_events)
+            event_name = random_event["event"]
+
+    if not args.text:
+        args.text = inquirer.text(message="Enter the text for the post").execute()
 
     password = get_password_from_keyring(logger, args.user)
     client.login(args.user, password)
 
-    paths = ["cat.jpg", "dog.jpg", "bird.jpg"]
-    image_alts = [
-        "Text version",
-        "of the image (ALT)",
-        "This parameter is optional",
-    ]
+    event = event_db.query(Event.event == event_name)
 
-    image_aspect_ratios = [
-        models.AppBskyEmbedDefs.AspectRatio(height=1, width=1),
-        models.AppBskyEmbedDefs.AspectRatio(height=4, width=3),
-        models.AppBskyEmbedDefs.AspectRatio(height=16, width=9),
-    ]
-
+    image_alts = []
     images = []
-    for path in paths:
+    image_aspect_ratios = []
+    for path in event["photos"]:
+
+        height, width = get_image_aspect_ratio(path)
+        image_aspect_ratios.append(
+            models.AppBskyEmbedDefs.AspectRatio(height=height, width=width)
+        )
+
         with open(path, "rb") as f:
             images.append(f.read())
 
+        if args.alts:
+            image_alts.append(
+                inquirer.text(message=f"Enter image alt text for {path}").execute()
+            )
+
     client.send_images(
-        text="Post with image from Python",
+        text=args.text,
         images=images,
         image_alts=image_alts,
         image_aspect_ratios=image_aspect_ratios,
     )
+    if client:
+        console.print(client)
 
-    event_db.update_one(
-        {"event": event_name}, 
-        {"$push": {"posted_to": f"Bluesky-{base.santitize_text(args.user)}"}}
-    )
-
-    return
+        event_db.update_one(
+            {"event": event_name},
+            {
+                "$push": {
+                    "posted": {
+                        "where": "Bluesky",
+                        "account": base.santitize_text(args.user),
+                        "date": pendulum.now().timestamp(),
+                    }
+                }
+            },
+        )
 
 
 def parse_args():
@@ -101,6 +159,10 @@ def parse_args():
         "-u",
         help="Your bluesky username",
     )
+
+    parser.add_argument("--text", "-t", help="Text for post")
+
+    parser.add_argument("--alts", "-a", action="store_true", help="Ask for alt text")
 
     parser.add_argument(
         "--random",

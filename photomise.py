@@ -130,7 +130,12 @@ def get_config():
     if os.path.exists(config_file):
         config.read(config_file)
 
-    config["Paths"] = {}
+    if not config.has_section('Paths'):
+        config['Paths'] = {}
+
+    if not config.has_section('Accounts'):
+        config['Accounts'] = {}
+
     try:
         photo_dir = config.get("Paths", "photo_dir")
     except (configparser.NoSectionError, configparser.NoOptionError):
@@ -150,16 +155,24 @@ def get_config():
     with open(config_file, "w") as configfile:
         config.write(configfile)
 
-    return photo_dir, database_dir
+    return config
+
+
+def get_event_db(database_dir: str) -> TinyDB:
+    return TinyDB(f"{database_dir}/event.json")
+
+
+def get_location_db(database_dir: str) -> TinyDB:
+    return TinyDB(f"{database_dir}/locations.json")
 
 
 def main(args):
     console = Console()
-    photo_dir, database_dir = get_config()
-    event_db = TinyDB(f"{database_dir}/event.json")
-    location_db = TinyDB(f"{database_dir}/locations.json")
+    config = get_config()
+    event_db = get_event_db(config["Paths"]["database_dir"])
+    location_db = get_location_db(config["Paths"]["database_dir"])
 
-    for dir, file in get_non_hidden_files(photo_dir):
+    for dir, file in get_non_hidden_files(config["Paths"]["photo_dir"]):
         date_object = None
         lat = None
         lon = None
@@ -236,7 +249,7 @@ def main(args):
                             "location": location_name,
                             "date": date_object.timestamp(),
                             "photos": [file_path],
-                            "posted_to": [],
+                            "posted": {},
                         }
                     )
 
