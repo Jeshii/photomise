@@ -8,11 +8,11 @@ argparse = "*"
 pendulum = "*"
 tinydb = "*"
 geopy = "*"
-exifread = "*"
 rich = "*"
 atproto = "*"
 keyring = "*"
 piexif = "*"
+configparser = "*"
 
 [dev-packages]
 

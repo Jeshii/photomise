@@ -1,35 +1,47 @@
 #!/usr/bin/env python3
 
 import argparse
-import exifread
+import piexif
 from tinydb import TinyDB, Query
 from geopy.distance import great_circle
 import pendulum
-from os import walk, remove, rename
-from os.path import isfile, splitext
+import os
 from InquirerPy import inquirer
 from rich.console import Console
+from urllib.parse import quote
+import configparser
+
+
+def santitize_text(text: str = "") -> str:
+    return quote(text.replace(" ", "_"))
 
 
 def extract_exif_info(image_path: str) -> dict:
-    with open(image_path, "rb") as f:
-        tags = exifread.process_file(f)
+    exif_dict = piexif.load(image_path)
+    return exif_dict
 
-        return tags
+
+def convert_to_degrees(value) -> float:
+    d = value[0][0] / value[0][1]
+    m = value[1][0] / value[1][1]
+    s = value[2][0] / value[2][1]
+    return d + (m / 60.0) + (s / 3600.0)
 
 
 def extract_gps(tags: dict) -> tuple:
-    gps_latitude = tags.get("GPS GPSLatitude")
-    gps_latitude_ref = tags.get("GPS GPSLatitudeRef")
-    gps_longitude = tags.get("GPS GPSLongitude")
-    gps_longitude_ref = tags.get("GPS GPSLongitudeRef")
+    gps_info = tags.get("GPS", {})
+
+    gps_latitude = gps_info.get(piexif.GPSIFD.GPSLatitude)
+    gps_latitude_ref = gps_info.get(piexif.GPSIFD.GPSLatitudeRef)
+    gps_longitude = gps_info.get(piexif.GPSIFD.GPSLongitude)
+    gps_longitude_ref = gps_info.get(piexif.GPSIFD.GPSLongitudeRef)
 
     if gps_latitude and gps_latitude_ref and gps_longitude and gps_longitude_ref:
         lat = convert_to_degrees(gps_latitude)
-        if gps_latitude_ref.values[0] != "N":
+        if gps_latitude_ref != b"N":
             lat = -lat
         lon = convert_to_degrees(gps_longitude)
-        if gps_longitude_ref.values[0] != "E":
+        if gps_longitude_ref != b"E":
             lon = -lon
         return lat, lon
     else:
@@ -37,10 +49,11 @@ def extract_gps(tags: dict) -> tuple:
 
 
 def extract_datetime(tags: dict) -> pendulum:
-    date_taken = tags.get("EXIF DateTimeOriginal")
+    exif_info = tags.get("Exif", {})
+    date_taken = exif_info.get(piexif.ExifIFD.DateTimeOriginal)
 
     if date_taken:
-        date_taken_str = str(date_taken)
+        date_taken_str = date_taken.decode("utf-8")
         date_taken_formatted = date_taken_str.replace(":", "-", 2)
         dt = pendulum.parse(date_taken_formatted)
 
@@ -49,11 +62,43 @@ def extract_datetime(tags: dict) -> pendulum:
         return None
 
 
-def convert_to_degrees(value):
-    d = float(value.values[0].num) / float(value.values[0].den)
-    m = float(value.values[1].num) / float(value.values[1].den)
-    s = float(value.values[2].num) / float(value.values[2].den)
-    return d + (m / 60.0) + (s / 3600.0)
+def same_event(
+    event_db: TinyDB, date: pendulum, location: str, max_time_delta_in_hours: int = 8
+):
+    for item in event_db.all():
+        db_date = pendulum.from_timestamp(item["date"])
+        time_delta = date.diff(db_date).in_hours()
+
+        if time_delta < max_time_delta_in_hours and location == item["location"]:
+            return db_date, item["event"], True
+    return date, None, False
+
+
+def item_duplicate(db, date_object, lat, lon):
+    Search = Query()
+    result = db.search(
+        (Search["date"] == date_object.timestamp())
+        & (Search["latitude"] == lat)
+        & (Search["longitude"] == lon)
+    )
+    return len(result) > 0
+
+
+def get_non_hidden_files(directory):
+    for dirpath, _, filenames in os.walk(directory):
+        for filename in filenames:
+            if not filename.startswith(".") and not filename.endswith(
+                ".json"
+            ):  # Check if filename does not start with a dot
+                yield dirpath, filename
+
+
+def remove_file(console: Console, file_path: str):
+    if os.isfile(file_path):
+        os.remove(file_path)
+        console.print(f"{file_path} has been deleted.")
+    else:
+        console.print(f"Could not find {file_path}")
 
 
 def find_location(db, latitude, longitude, max_distance_km=0.5):
@@ -71,80 +116,54 @@ def find_location(db, latitude, longitude, max_distance_km=0.5):
     return closest_location
 
 
-def same_event(db: TinyDB, date: pendulum, max_time_delta_in_hours: int = 1):
-    for item in db.all():
-        db_date = pendulum.from_timestamp(item["date"])
-        time_delta = date.diff(db_date).in_hours()
-
-        if time_delta < max_time_delta_in_hours:
-            return True
-
-    return False
+def fix_dir(current):
+    return current.replace("\\", "").strip()
 
 
-def item_duplicate(db, date_object, lat, lon):
-    Search = Query()
-    result = db.search(
-        (Search["date"] == date_object.timestamp())
-        & (Search["latitude"] == lat)
-        & (Search["longitude"] == lon)
-    )
-    return len(result) > 0
+def get_config():
+    """
+    Loads configuration from config.ini file or prompts the user for missing values.
+    """
+    config = configparser.ConfigParser()
+    config_file = "config.ini"
 
+    if os.path.exists(config_file):
+        config.read(config_file)
 
-def get_non_hidden_files(directory):
-    for dirpath, _, filenames in walk(directory):
-        for filename in filenames:
-            if not filename.startswith(".") and not filename.endswith(
-                ".json"
-            ):  # Check if filename does not start with a dot
-                yield dirpath, filename
-
-
-def remove_file(console: Console, file_path: str):
-    if isfile(file_path):
-        remove(file_path)
-        console.print(f"{file_path} has been deleted.")
-    else:
-        console.print(f"Could not find {file_path}")
-
-
-def rename_file(console: Console, dir: str, file: str, new_name: str):
-    path = f"{dir}/{file}"
-    new_path = f"{dir}/{new_name}"
-    if isfile(path):
-        rename(path, new_path)
-        console.print(f"{path} has been renamed to {new_path}.")
-    else:
-        console.print(f"Could not find {path}")
-
-
-def get_image_aspect_ratio(image_path):
-    with open(image_path, "rb") as f:
-        tags = exifread.process_file(f)
+    config["Paths"] = {}
+    try:
+        photo_dir = config.get("Paths", "photo_dir")
+    except (configparser.NoSectionError, configparser.NoOptionError):
+        photo_dir = inquirer.text(
+            message="Enter the path to the photo directory", filter=fix_dir
+        ).execute()
+        config["Paths"]["photo_dir"] = photo_dir
 
     try:
-        image_width = int(tags["Image Width"].values[0])
-        image_height = int(tags["Image Height"].values[0])
-        return (image_width, image_height)
-    except KeyError:
-        return None
+        database_dir = config.get("Paths", "database_dir")
+    except (configparser.NoSectionError, configparser.NoOptionError):
+        database_dir = inquirer.text(
+            message="Enter the path to the database directory", filter=fix_dir
+        ).execute()
+        config["Paths"]["database_dir"] = database_dir
+
+    with open(config_file, "w") as configfile:
+        config.write(configfile)
+
+    return photo_dir, database_dir
 
 
 def main(args):
     console = Console()
+    photo_dir, database_dir = get_config()
+    event_db = TinyDB(f"{database_dir}/event.json")
+    location_db = TinyDB(f"{database_dir}/locations.json")
 
-    if not args.directory:
-        args.directory = inquirer.text(message="Enter a file or a directory").execute()
+    for dir, file in get_non_hidden_files(photo_dir):
+        date_object = None
+        lat = None
+        lon = None
 
-    if args.same:
-        location_db = TinyDB(f"{args.directory}/locations.json")
-        item_db = TinyDB(f"{args.directory}/items.json")
-    else:
-        location_db = TinyDB("locations.json")
-        item_db = TinyDB("items.json")
-
-    for dir, file in get_non_hidden_files(args.directory):
         file_path = f"{dir}/{file}"
         console.print(f"Checking {file}...")
         try:
@@ -156,13 +175,10 @@ def main(args):
         except Exception:
             console.print_exception()
 
-        if date_object:
-            console.print(f"Taken: {date_object}")
-            if same_event(item_db, date_object):
-                if inquirer.confirm(
-                    "This item appears to be from an already registered event. Delete it?"
-                ).execute():
-                    remove_file(console, file_path)
+        if not date_object:
+            date_object = pendulum.parse(
+                inquirer.text("Please enter a date for this photo").execute()
+            )
 
         if lat and lon:
             console.print(f"Latitude: {lat}, Longitude: {lon}")
@@ -178,39 +194,51 @@ def main(args):
                 location_db.insert(
                     {"name": location_name, "latitude": lat, "longitude": lon}
                 )
+            if date_object:
+                console.print(f"Taken: {date_object.format("YYYY-MM-DD HH:MM")}")
+                event_date, event_name, event_same = same_event(
+                    event_db, date_object, location_name
+                )
+            else:
+                event_date = date_object
+                event_same = False
+                event_name = None
 
-            if item_duplicate(item_db, date_object, lat, lon):
+            if item_duplicate(event_db, date_object, lat, lon):
                 if inquirer.confirm(
                     "This item appears to be a duplicate. Delete it?"
                 ).execute():
                     remove_file(console, file_path)
             else:
-                if args.item:
-                    item_name = inquirer.text(
-                        f"Please name this item: {file} - {date_object}"
+                if args.event and not event_name:
+                    event_name = inquirer.text(
+                        f"Please name this event from {event_date.format("YYYY-MM-DD")} at {location_name}"
                     ).execute()
                 else:
-                    item_name = f"{file.split(".")[0]}-{date_object.format("YYYYMMDD")}"
-
-                # Save item
-                item_db.insert(
-                    {
-                        "item": item_name,
-                        "latitude": lat,
-                        "longitude": lon,
-                        "location": location_name,
-                        "date": date_object.timestamp(),
-                    }
-                )
-
-                if args.rename:
-                    extension = splitext(file_path)[1]
-                    if "." not in extension:
-                        extension = f".{extension}"
-                    new_name = (
-                        f"{item_name}-{location_name.replace(" ","_")}{extension}"
+                    location_name_sanitized = santitize_text(location_name)
+                    event_name = (
+                        f"{event_date.format("YYYYMMDD")}-{location_name_sanitized}"
                     )
-                    rename_file(console, dir, file, new_name)
+
+                if event_same:
+                    Event = Query()
+                    event = event_db.get(Event.event == event_name)
+                    event_db.update(
+                        {"photos": event.get("photos", []) + [file_path]},
+                        Event.event == event_name,
+                    )
+                else:
+                    event_db.insert(
+                        {
+                            "event": event_name,
+                            "latitude": lat,
+                            "longitude": lon,
+                            "location": location_name,
+                            "date": date_object.timestamp(),
+                            "photos": [file_path],
+                            "posted_to": [],
+                        }
+                    )
 
         else:
             console.print("No GPS info found.")
@@ -222,29 +250,16 @@ def parse_args():
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter, description=description
     )
-    parser.add_argument("--directory", "-d", help="A directory of photos to analyze")
     parser.add_argument(
-        "--item",
-        "-i",
+        "--event",
+        "-e",
         action="store_true",
-        help="Ask for item names",
+        help="Ask for event names (default is to name events automatically by date and location)",
     )
     parser.add_argument(
         "--link",
         "-l",
-        help="Supply a link to display with lat/lon",
-    )
-    parser.add_argument(
-        "--rename",
-        "-r",
-        action="store_true",
-        help="Rename file based on provided info",
-    )
-    parser.add_argument(
-        "--same",
-        "-s",
-        action="store_true",
-        help="Store DB in same folder as photos",
+        help="Supply a link to display with lat/lon appended at end to help identify coordinates",
     )
 
     args = parser.parse_args()

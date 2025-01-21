@@ -12,6 +12,7 @@ import sys
 import termios
 import tty
 import piexif
+import photomise as base
 
 
 def get_password_from_keyring(logger, user: str):
@@ -48,6 +49,9 @@ def main(args):
 
     if not args.user:
         args.user = inquirer.text(message="Enter username").execute()
+    if not args.random:
+        Event = Query()
+        event = event_db.get(Event.event == event_name)
 
     password = get_password_from_keyring(logger, args.user)
     client.login(args.user, password)
@@ -75,6 +79,11 @@ def main(args):
         images=images,
         image_alts=image_alts,
         image_aspect_ratios=image_aspect_ratios,
+    )
+
+    event_db.update_one(
+        {"event": event_name}, 
+        {"$push": {"posted_to": f"Bluesky-{base.santitize_text(args.user)}"}}
     )
 
     return

@@ -1,5 +1,8 @@
 # Ignore all files ending with .json
-*.json
+*.json, *.ini
 
 # Ignore ds store
 .DS_Store
+
+# Ignore the data folder
+/data

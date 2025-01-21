@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "75c37462a9306af6ecf8c75316831ebac6309adad8d9f8aa90aadfc94459342f"
+            "sha256": "8ad94fc18aac5b8d8ebab0294efc15110ad34a729ea4c949e0745e971fcda315"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -42,12 +42,12 @@
         },
         "atproto": {
             "hashes": [
-                "sha256:8f273dad6bf27e878ca98d58c41c85a0da275eb17f23a394057edee8220c6776",
-                "sha256:b49f93b6fc4f09ebaf3f65bd96f4080c51841db0d591ad577df620cf48930a7c"
+                "sha256:3a88c19310dcd452e5fd3138d2d54f728acbd58f09b1ebc757f4f268e76bbaa1",
+                "sha256:dab20db649f72a9c3a1957bb7bf367eff77f05cb716a83c0814a3020800ca0e1"
             ],
             "index": "pypi",
             "markers": "python_version < '3.14' and python_version >= '3.8'",
-            "version": "==0.0.56"
+            "version": "==0.0.57"
         },
         "certifi": {
             "hashes": [
@@ -138,6 +138,15 @@
             "markers": "python_version >= '3.7'",
             "version": "==8.1.8"
         },
+        "configparser": {
+            "hashes": [
+                "sha256:98e374573c4e10e92399651e3ba1c47a438526d633c44ee96143dec26dad4299",
+                "sha256:eb82646c892dbdf773dae19c633044d163c3129971ae09b49410a303b8e0a5f7"
+            ],
+            "index": "pypi",
+            "markers": "python_version >= '3.8'",
+            "version": "==7.1.0"
+        },
         "cryptography": {
             "hashes": [
                 "sha256:0c580952eef9bf68c4747774cde7ec1d85a6e61de97281f2dba83c7d2c806362",
@@ -178,14 +187,6 @@
             ],
             "markers": "python_version >= '3.9'",
             "version": "==2.7.0"
-        },
-        "exifread": {
-            "hashes": [
-                "sha256:0ac5a364169dbdf2bd62f94f5c073970ab6694a3166177f5e448b10c943e2ca4",
-                "sha256:2c5c59ef03b3bbee75b82b82d2498006b3c13509f35c9a76c7552faff73fa2d5"
-            ],
-            "index": "pypi",
-            "version": "==3.0.0"
         },
         "geographiclib": {
             "hashes": [
