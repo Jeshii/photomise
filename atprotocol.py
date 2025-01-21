@@ -67,18 +67,26 @@ def fix_bluesky(current):
     return current.replace("@", "").strip()
 
 
-def get_events_without_bluesky_posted(db):
+def get_events_without_bluesky_posted(post_db: TinyDB, event_db: TinyDB):
     events = {}
-    PostedEvent = Query()
-    for doc in db.search(PostedEvent.where != "Bluesky"):
-        events[doc["event"]] = doc
+    posted_events = []
+    for post in post_db.all():
+        if post["where"] == "Bluesky":
+            posted_events.append(post["event"])
+    for event in event_db.all():
+        if event["event"] not in posted_events:
+            events[event["event"]] = event
     return events
 
 
-def compress_image(image_path, quality=85, max_dimension=1200):
+def compress_image(image_path: str, quality:int =85, max_dimension:int=1200, rotation_angle:int=0):
     try:
         image = Image.open(image_path)
         img_io = BytesIO()
+
+        if rotation_angle:
+            image = image.rotate(float(rotation_angle), expand=True)
+
         width, height = image.size
 
         if width > max_dimension or height > max_dimension:
@@ -89,11 +97,11 @@ def compress_image(image_path, quality=85, max_dimension=1200):
 
             new_width = int(width * scale_factor)
             new_height = int(height * scale_factor)
-            resized_image = image.resize((new_width, new_height), Image.LANCZOS)
+            image = image.resize((new_width, new_height), Image.LANCZOS)
 
-            resized_image.save(img_io, format="JPEG", optimize=True, quality=quality)
-        else:
-            image.save(img_io, format="JPEG", optimize=True, quality=quality)
+        image.save(img_io, format="JPEG", optimize=True, quality=quality)
+        image.show()
+        
         img_io.seek(0)
 
         return img_io
@@ -104,7 +112,7 @@ def compress_image(image_path, quality=85, max_dimension=1200):
 def update_event_posted(db, event_name, user, platform):
     db.insert(
         {
-            "event_name": event_name,
+            "event": event_name,
             "where": platform,
             "account": base.santitize_text(user),
             "date": pendulum.now().timestamp(),
@@ -130,7 +138,8 @@ def main(args):
     if not args.user:
         args.user = get_bluesky_user(config)
 
-    events = get_events_without_bluesky_posted(post_db)
+    events = get_events_without_bluesky_posted(post_db=post_db, event_db=event_db)
+    logger.debug(f"Events: {events}")
     if args.posted or not events:
         events = base.get_all_events(event_db)
 
@@ -168,7 +177,24 @@ def main(args):
             models.AppBskyEmbedDefs.AspectRatio(height=height, width=width)
         )
 
-        images.append(compress_image(path))
+        rotation_angle = 0
+        quality = 85
+        while True:
+            compressed_image = compress_image(path, rotation_angle=rotation_angle, quality=quality)
+            if inquirer.confirm(message="Does the image look okay?").execute():
+                images.append(compressed_image)
+                break
+            else:
+                quality = inquirer.select(
+                    message="Choose a quality level",
+                    choices=[10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
+                ).execute()
+                
+                rotation_angle = inquirer.select(
+                    message="Choose a rotation angle",
+                    choices=[0, 90, 180, 270],
+                ).execute()
+        
 
         if args.alts:
             image_alts.append(
