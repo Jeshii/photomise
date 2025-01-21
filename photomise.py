@@ -10,6 +10,17 @@ from InquirerPy import inquirer
 from rich.console import Console
 from urllib.parse import quote
 import configparser
+import logging
+from PIL import Image
+
+CONFIG_FILE = "config.ini"
+
+
+def get_all_events(db):
+    events = {}
+    for document in db.all():
+        events[document["event"]] = document
+    return events
 
 
 def santitize_text(text: str = "") -> str:
@@ -120,21 +131,15 @@ def fix_dir(current):
     return current.replace("\\", "").strip()
 
 
-def get_config():
-    """
-    Loads configuration from config.ini file or prompts the user for missing values.
-    """
-    config = configparser.ConfigParser()
-    config_file = "config.ini"
+def get_config(config: configparser.ConfigParser) -> configparser.ConfigParser:
+    if os.path.exists(CONFIG_FILE):
+        config.read(CONFIG_FILE)
 
-    if os.path.exists(config_file):
-        config.read(config_file)
+    if not config.has_section("Paths"):
+        config["Paths"] = {}
 
-    if not config.has_section('Paths'):
-        config['Paths'] = {}
-
-    if not config.has_section('Accounts'):
-        config['Accounts'] = {}
+    if not config.has_section("Accounts"):
+        config["Accounts"] = {}
 
     try:
         photo_dir = config.get("Paths", "photo_dir")
@@ -152,7 +157,7 @@ def get_config():
         ).execute()
         config["Paths"]["database_dir"] = database_dir
 
-    with open(config_file, "w") as configfile:
+    with open(CONFIG_FILE, "w") as configfile:
         config.write(configfile)
 
     return config
@@ -168,9 +173,12 @@ def get_location_db(database_dir: str) -> TinyDB:
 
 def main(args):
     console = Console()
-    config = get_config()
+    config = configparser.ConfigParser()
+    config = get_config(config)
     event_db = get_event_db(config["Paths"]["database_dir"])
     location_db = get_location_db(config["Paths"]["database_dir"])
+    level = getattr(logging, args.log.upper())
+    logging.basicConfig(level=level)
 
     for dir, file in get_non_hidden_files(config["Paths"]["photo_dir"]):
         date_object = None
@@ -179,6 +187,10 @@ def main(args):
 
         file_path = f"{dir}/{file}"
         console.print(f"Checking {file}...")
+        if args.preview:
+            image = Image.open(file_path)
+            image.show(title=file_path)
+
         try:
             exif_tags = extract_exif_info(file_path)
 
@@ -219,39 +231,37 @@ def main(args):
 
             if item_duplicate(event_db, date_object, lat, lon):
                 if inquirer.confirm(
-                    "This item appears to be a duplicate. Delete it?"
+                    "This item appears to be a duplicate. Skip?"
                 ).execute():
-                    remove_file(console, file_path)
+                    continue
+            if args.event and not event_name:
+                event_name = inquirer.text(
+                    f"Please name this event from {event_date.format("YYYY-MM-DD")} at {location_name}"
+                ).execute()
             else:
-                if args.event and not event_name:
-                    event_name = inquirer.text(
-                        f"Please name this event from {event_date.format("YYYY-MM-DD")} at {location_name}"
-                    ).execute()
-                else:
-                    location_name_sanitized = santitize_text(location_name)
-                    event_name = (
-                        f"{event_date.format("YYYYMMDD")}-{location_name_sanitized}"
-                    )
+                location_name_sanitized = santitize_text(location_name)
+                event_name = (
+                    f"{event_date.format("YYYYMMDD")}-{location_name_sanitized}"
+                )
 
-                if event_same:
-                    Event = Query()
-                    event = event_db.get(Event.event == event_name)
-                    event_db.update(
-                        {"photos": event.get("photos", []) + [file_path]},
-                        Event.event == event_name,
-                    )
-                else:
-                    event_db.insert(
-                        {
-                            "event": event_name,
-                            "latitude": lat,
-                            "longitude": lon,
-                            "location": location_name,
-                            "date": date_object.timestamp(),
-                            "photos": [file_path],
-                            "posted": {},
-                        }
-                    )
+            if event_same:
+                Event = Query()
+                event = event_db.get(Event.event == event_name)
+                event_db.update(
+                    {"photos": event.get("photos", []) + [file_path]},
+                    Event.event == event_name,
+                )
+            else:
+                event_db.insert(
+                    {
+                        "event": event_name,
+                        "latitude": lat,
+                        "longitude": lon,
+                        "location": location_name,
+                        "date": date_object.timestamp(),
+                        "photos": [file_path],
+                    }
+                )
 
         else:
             console.print("No GPS info found.")
@@ -273,6 +283,19 @@ def parse_args():
         "--link",
         "-l",
         help="Supply a link to display with lat/lon appended at end to help identify coordinates",
+    )
+    parser.add_argument(
+        "--preview",
+        "-p",
+        action="store_true",
+        help="Show image preview",
+    )
+
+    parser.add_argument(
+        "--log",
+        help="Set logging level",
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
     )
 
     args = parser.parse_args()

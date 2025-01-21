@@ -13,6 +13,7 @@ atproto = "*"
 keyring = "*"
 piexif = "*"
 configparser = "*"
+pillow = "*"
 
 [dev-packages]
 
