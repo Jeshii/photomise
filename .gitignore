@@ -4,6 +4,3 @@
 
 # Ignore ds store
 .DS_Store
-
-# Ignore the data folder
-/data
