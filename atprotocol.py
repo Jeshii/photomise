@@ -1,21 +1,18 @@
 #!/usr/bin/env python3
 
 import argparse
-from tinydb import TinyDB, Query
+from tinydb import TinyDB, where
 import pendulum
 from InquirerPy import inquirer
 from rich.console import Console
 from atproto import Client, models
 import keyring
 import logging
-import piexif
 import photomise as base
 import configparser
 import random
 import os
 import getpass
-from PIL import Image
-from io import BytesIO
 
 SERVICE_NAME = "photomise-atprotocol-bluesky"
 
@@ -30,21 +27,6 @@ def get_password_from_keyring(logger, user: str):
     password = getpass.getpass("Enter password: ")
     keyring.set_password(SERVICE_NAME, user, password)
     return password
-
-
-def get_image_aspect_ratio(image_path: str) -> tuple:
-    try:
-        exif_dict = piexif.load(image_path)
-        image_width = exif_dict["0th"][piexif.ImageIFD.ImageWidth]
-        image_height = exif_dict["0th"][piexif.ImageIFD.ImageLength]
-        return (image_width, image_height)
-    except (piexif.InvalidImageDataError, KeyError, TypeError):
-        try:
-            with Image.open(image_path) as img:
-                width, height = img.size
-                return (width, height)
-        except (OSError, IOError):
-            return None
 
 
 def get_bluesky_user(config):
@@ -79,69 +61,31 @@ def get_events_without_bluesky_posted(post_db: TinyDB, event_db: TinyDB):
     return events
 
 
-def compress_image(image_path: str, quality:int =85, max_dimension:int=1200, rotation_angle:int=0):
-    try:
-        image = Image.open(image_path)
-        img_io = BytesIO()
-
-        if rotation_angle:
-            image = image.rotate(float(rotation_angle), expand=True)
-
-        width, height = image.size
-
-        if width > max_dimension or height > max_dimension:
-            if width > height:
-                scale_factor = max_dimension / width
-            else:
-                scale_factor = max_dimension / height
-
-            new_width = int(width * scale_factor)
-            new_height = int(height * scale_factor)
-            image = image.resize((new_width, new_height), Image.LANCZOS)
-
-        image.save(img_io, format="JPEG", optimize=True, quality=quality)
-        image.show()
-        
-        img_io.seek(0)
-
-        return img_io
-    except Exception as e:
-        print(f"Error compressing image: {e}")
-
-
-def update_event_posted(db, event_name, user, platform):
-    db.insert(
-        {
-            "event": event_name,
-            "where": platform,
-            "account": base.santitize_text(user),
-            "date": pendulum.now().timestamp(),
-        }
-    )
-
-
-def get_post_db(database_dir: str) -> TinyDB:
-    return TinyDB(f"{database_dir}/posts.json")
-
-
 def main(args):
+    # Basic initialization
     config = configparser.ConfigParser()
     console = Console()
-    config = base.get_config(config)
-    event_db = base.get_event_db(config["Paths"]["database_dir"])
-    post_db = get_post_db(config["Paths"]["database_dir"])
     level = getattr(logging, args.log.upper())
     logging.basicConfig(level=level)
     logger = logging.getLogger(__name__)
+
+    # Project initialization
+    projects_db, _ = base.set_project(console, config, args)
+    event_table = base.get_events_table(projects_db)
+    posts_table = base.get_posts_table(projects_db)
+    photos_table = base.get_photos_table(projects_db)
     client = Client()
 
+    # Check flags
     if not args.user:
         args.user = get_bluesky_user(config)
 
-    events = get_events_without_bluesky_posted(post_db=post_db, event_db=event_db)
+    events = get_events_without_bluesky_posted(
+        post_db=posts_table, event_db=event_table
+    )
     logger.debug(f"Events: {events}")
     if args.posted or not events:
-        events = base.get_all_events(event_db)
+        events = base.get_all_events(event_table)
 
     if not events:
         console.print("[bold red]No events found. Please run photomise first!")
@@ -169,7 +113,7 @@ def main(args):
     image_aspect_ratios = []
     for path in events[event_name]["photos"]:
 
-        height, width = get_image_aspect_ratio(path)
+        height, width = base.get_image_aspect_ratio(path)
         if not height or not width:
             height = 1
             width = 1
@@ -177,11 +121,23 @@ def main(args):
             models.AppBskyEmbedDefs.AspectRatio(height=height, width=width)
         )
 
-        rotation_angle = 0
-        quality = 85
+        if path in photos_table.query(where("path") == path):
+            rotation_angle = photos_table.get(where("path") == path)["rotate"]
+            quality = photos_table.get(where("path") == path)["quality"]
+        else:
+            rotation_angle = 0
+            quality = 85
         while True:
-            compressed_image = compress_image(path, rotation_angle=rotation_angle, quality=quality)
-            if inquirer.confirm(message="Does the image look okay?").execute():
+            compressed_image = base.compress_image(
+                path,
+                rotation_angle=rotation_angle,
+                quality=quality,
+                show=args.view,
+            )
+            if (
+                not args.preview
+                or inquirer.confirm(message="Does the image look okay?").execute()
+            ):
                 images.append(compressed_image)
                 break
             else:
@@ -189,12 +145,19 @@ def main(args):
                     message="Choose a quality level",
                     choices=[10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
                 ).execute()
-                
+
                 rotation_angle = inquirer.select(
                     message="Choose a rotation angle",
                     choices=[0, 90, 180, 270],
                 ).execute()
-        
+
+                photos_table.insert(
+                    {
+                        "path": path,
+                        "rotation": rotation_angle,
+                        "quality": quality,
+                    }
+                )
 
         if args.alts:
             image_alts.append(
@@ -210,7 +173,7 @@ def main(args):
     if client:
         console.print(client)
 
-        update_event_posted(post_db, event_name, args.user, "Bluesky")
+        base.update_event_posted(posts_table, event_name, args.user, "Bluesky")
 
 
 def parse_args():
@@ -228,8 +191,6 @@ def parse_args():
 
     parser.add_argument("--text", "-t", help="Text for post")
 
-    parser.add_argument("--alts", "-a", action="store_true", help="Ask for alt text")
-
     parser.add_argument(
         "--random",
         "-r",
@@ -238,10 +199,10 @@ def parse_args():
     )
 
     parser.add_argument(
-        "--posted",
-        "-p",
+        "--allow",
+        "-a",
         action="store_true",
-        help="Show previously posted events",
+        help="Allow previously posted events",
     )
 
     parser.add_argument(
@@ -249,6 +210,19 @@ def parse_args():
         help="Set logging level",
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+    )
+
+    parser.add_argument(
+        "--view",
+        "-v",
+        action="store_true",
+        help="View the image while processing",
+    )
+
+    parser.add_argument(
+        "--project",
+        "-p",
+        help="Provide the name of the project to use",
     )
 
     args = parser.parse_args()
