@@ -11,7 +11,7 @@ from rich.console import Console
 from urllib.parse import quote
 import configparser
 import logging
-from PIL import Image
+from PIL import Image, ImageEnhance
 from io import BytesIO
 import json
 
@@ -103,6 +103,29 @@ def compress_image(
         return img_io
     except Exception as e:
         print(f"Error compressing image: {e}")
+
+def enhance_image(
+        image: Image.Image,
+        brightness: float = 1.0,
+        contrast: float = 1.0,
+        saturation: float = 1.0,
+        sharpness: float = 1.0
+        ) -> Image.Image:
+
+    enhancer = ImageEnhance.Brightness(image)
+    image = enhancer.enhance(brightness)
+
+    enhancer = ImageEnhance.Contrast(image)
+    image = enhancer.enhance(contrast)
+
+    enhancer = ImageEnhance.Color(image)
+    image = enhancer.enhance(saturation)
+
+    enhancer = ImageEnhance.Sharpness(image)
+    image = enhancer.enhance(sharpness)
+
+    return image
+
 
 
 def extract_datetime(tags: dict) -> pendulum:
