@@ -194,6 +194,9 @@ def get_project_table(database: str) -> TinyDB:
 def get_photos_table(database: str) -> TinyDB:
     return database.table("photos")
 
+def get_accounts_table(database: str) -> TinyDB:
+    return database.table("accounts")
+
 
 def get_settings(database: str, args: argparse.Namespace) -> TinyDB:
     settings_table = database.table("settings")
@@ -377,23 +380,29 @@ def main(args):
                             choices=[0, 90, 180, 270],
                         ).execute()
 
-                        photos_table.insert(
-                            {
-                                "path": file_path,
-                                "rotation": rotation_angle,
-                                "quality": quality,
-                            }
-                        )
+
             if args.description:
                 description = inquirer.text(
                     message=f"Enter a description for viewing impaired users for this image: {file_path}",
                     default=description,
                 ).execute()
+
+                photos_table
             if args.flavor:
                 flavor = inquirer.text(
                     message=f"Enter flavor text for this image: {file_path}",
                     default=flavor,
                 ).execute()
+
+            photos_table.insert(
+                {
+                    "path": file_path,
+                    "rotation": rotation_angle,
+                    "quality": quality,
+                    "description": description,
+                    "flavor": flavor,
+                }
+            )
 
             try:
                 exif_tags = extract_exif_info(file_path)
