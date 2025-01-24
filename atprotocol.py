@@ -11,7 +11,6 @@ import logging
 import photomise as base
 import configparser
 import random
-import os
 import getpass
 
 SERVICE_NAME = "photomise-atprotocol-bluesky"
@@ -29,20 +28,14 @@ def get_password_from_keyring(logger, user: str):
     return password
 
 
-def get_bluesky_user(config):
+def get_bluesky_user(accounts_db: TinyDB):
     try:
-        user = config.get("Accounts", "bluesky")
+        user = accounts_db.get(where("where") == "Bluesky")["user"]
         return user
-    except (configparser.NoSectionError, configparser.NoOptionError, AttributeError):
-        if os.path.exists(base.CONFIG_FILE):
-            config.read(base.CONFIG_FILE)
-            username = inquirer.text(message="Enter your Bluesky username").execute()
-            config["Accounts"]["bluesky"] = username
-            with open(base.CONFIG_FILE, "w") as configfile:
-                config.write(configfile)
-            return username
-        else:
-            return None
+    except TypeError:
+        user = inquirer.text(message="Enter your Bluesky username").execute()
+        accounts_db.insert({"where": "Bluesky", "user": user})
+        return user
 
 
 def fix_bluesky(current):
@@ -74,17 +67,19 @@ def main(args):
     event_table = base.get_events_table(projects_db)
     posts_table = base.get_posts_table(projects_db)
     photos_table = base.get_photos_table(projects_db)
+    accounts_db = base.get_accounts_table(projects_db)
     client = Client()
 
     # Check flags
     if not args.user:
-        args.user = get_bluesky_user(config)
+        args.user = get_bluesky_user(accounts_db)
+        logger.debug(f"User: {args.user}")
 
     events = get_events_without_bluesky_posted(
         post_db=posts_table, event_db=event_table
     )
     logger.debug(f"Events: {events}")
-    if args.posted or not events:
+    if args.allow or not events:
         events = base.get_all_events(event_table)
 
     if not events:
@@ -106,7 +101,14 @@ def main(args):
         ).execute()
 
     password = get_password_from_keyring(logger, args.user)
-    client.login(args.user, password)
+    try:
+        client.login(args.user, password)
+        if not client.me:
+            console.print("[bold red]Login failed!")
+            return
+    except Exception as e:
+        console.print(f"[bold red]Login error: {e}")
+        return
 
     image_alts = []
     images = []
@@ -121,12 +123,15 @@ def main(args):
             models.AppBskyEmbedDefs.AspectRatio(height=height, width=width)
         )
 
-        if path in photos_table.query(where("path") == path):
-            rotation_angle = photos_table.get(where("path") == path)["rotate"]
-            quality = photos_table.get(where("path") == path)["quality"]
+        photo_entry = photos_table.get(where("path") == path)
+        if photo_entry:
+            rotation_angle = photo_entry.get("rotation", 0)
+            quality = photo_entry.get("quality", 85)
+            description = photo_entry.get("description","")
         else:
             rotation_angle = 0
             quality = 85
+            description = ""
         while True:
             compressed_image = base.compress_image(
                 path,
@@ -135,7 +140,7 @@ def main(args):
                 show=args.view,
             )
             if (
-                not args.preview
+                not args.view
                 or inquirer.confirm(message="Does the image look okay?").execute()
             ):
                 images.append(compressed_image)
@@ -159,17 +164,26 @@ def main(args):
                     }
                 )
 
-        if args.alts:
+        if args.description:
             image_alts.append(
-                inquirer.text(message=f"Enter image alt text for {path}").execute()
+                inquirer.text(
+                    message=f"Enter a description for visual impaired users for {path}",
+                    default=description).execute()
             )
+            image_alts.append(description)
 
-    client.send_images(
-        text=args.text,
-        images=images,
-        image_alts=image_alts,
-        image_aspect_ratios=image_aspect_ratios,
-    )
+    try:
+        client.send_images(
+            text=args.text,
+            images=images,
+            image_alts=image_alts,
+            image_aspect_ratios=image_aspect_ratios,
+        )
+    except Exception as e:
+        console.print(f"[bold red]Upload failed: {e}")
+        # Maybe add a retry mechanism here
+        return
+
     if client:
         console.print(client)
 
@@ -223,6 +237,20 @@ def parse_args():
         "--project",
         "-p",
         help="Provide the name of the project to use",
+    )
+
+    parser.add_argument(
+        "--flavor",
+        "-f",
+        action="store_true",
+        help="Ask to store flavor text (default is use event name and date)",
+    )
+
+    parser.add_argument(
+        "--description",
+        "-d",
+        action="store_true",
+        help="Ask to store a description of the photo for viewing impaired users (default is use flavor text)",
     )
 
     args = parser.parse_args()
