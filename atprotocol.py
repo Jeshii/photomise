@@ -28,13 +28,13 @@ def get_password_from_keyring(logger, user: str):
     return password
 
 
-def get_bluesky_user(accounts_db: TinyDB):
+def get_bluesky_user(accounts_table: TinyDB):
     try:
-        user = accounts_db.get(where("where") == "Bluesky")["user"]
+        user = accounts_table.get(where("where") == "Bluesky")["user"]
         return user
     except TypeError:
         user = inquirer.text(message="Enter your Bluesky username").execute()
-        accounts_db.insert({"where": "Bluesky", "user": user})
+        accounts_table.insert({"where": "Bluesky", "user": user})
         return user
 
 
@@ -67,12 +67,12 @@ def main(args):
     event_table = base.get_events_table(projects_db)
     posts_table = base.get_posts_table(projects_db)
     photos_table = base.get_photos_table(projects_db)
-    accounts_db = base.get_accounts_table(projects_db)
+    accounts_table = base.get_accounts_table(projects_db)
     client = Client()
 
     # Check flags
     if not args.user:
-        args.user = get_bluesky_user(accounts_db)
+        args.user = get_bluesky_user(accounts_table)
         logger.debug(f"User: {args.user}")
 
     events = get_events_without_bluesky_posted(
