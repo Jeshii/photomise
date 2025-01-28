@@ -298,7 +298,7 @@ def set_min_max(value: float) -> float:
 
 
 def set_project(
-    console: Console, config: configparser.ConfigParser, args: argparse.Namespace
+    logger: logging, config: configparser.ConfigParser, args: argparse.Namespace
 ) -> tuple[TinyDB, str]:
     if os.path.exists(CONFIG_FILE):
         config.read(CONFIG_FILE)
@@ -315,7 +315,7 @@ def set_project(
     project_set_up = False
     if not projects:
         project_set_up = True
-        console.print("No projects found in config.ini")
+        logger.warning("No projects found in config.ini")
         args.project = inquirer.text("Please enter a project name").execute()
         project_path = inquirer.text("Please the path for the project").execute()
         args.description = inquirer.confirm(
@@ -336,13 +336,12 @@ def set_project(
             try:
                 config.write(configfile)
             except IOError as e:
-                console.print(f"Error writing to config file: {e}")
-                logging.exception("Error writing to config file")
+                logging.exception(f"Error writing to config file: {e}")
 
-    while not args.project or args.project =="Settings":
+    while not args.project or args.project == "Settings":
         project_choices = {"Settings": "Settings"}
-        for name, path in projects.items(): 
-            project_choices[f"{name} ({path})"]=name
+        for name, path in projects.items():
+            project_choices[f"{name} ({path})"] = name
         project_choice = inquirer.select(
             message="Select a project", choices=project_choices.keys()
         ).execute()
@@ -354,8 +353,8 @@ def set_project(
                     break
                 updated = make_filter()
                 if updated:
-                    console.print(f"Filter [bold]{updated}[bold] settings saved.")
-                
+                    logger.info(f"""Filter "{updated}" settings saved.""")
+
     db_path = f"{projects[args.project]}/db/"
     photos_path = f"{projects[args.project]}/photos/"
 
@@ -386,6 +385,7 @@ def set_project(
 
     return project_db, photos_path
 
+
 def make_filter():
     filter_name = inquirer.text("Enter a name for this filter").execute()
     global_db = get_global_db()
@@ -394,13 +394,10 @@ def make_filter():
     filter = filter_table.search(Filter.name == filter_name)
     logging.debug(f"Filter: {filter}")
     brightness = make_min_max_prompt(
-        "Adjust brightness", 
+        "Adjust brightness",
         filter[0].get("brightness", 1.0),
-        )
-    contrast = make_min_max_prompt(
-        "Adjust contrast", 
-        filter[0].get("contrast", 1.0)
-        )                        
+    )
+    contrast = make_min_max_prompt("Adjust contrast", filter[0].get("contrast", 1.0))
     color = make_min_max_prompt("Adjust color", filter[0].get("color", 1.0))
     sharpness = make_min_max_prompt("Adjust sharpness", filter[0].get("sharpness", 1.0))
 
@@ -420,7 +417,8 @@ def make_filter():
     else:
         return False
 
-def set_global_settings(args:argparse.Namespace):
+
+def set_global_settings(args: argparse.Namespace):
     global_db = get_global_db()
     settings_table = global_db.table("settings")
     settings_doc = settings_table.get(doc_id=1)
@@ -431,40 +429,43 @@ def set_global_settings(args:argparse.Namespace):
         args.flavor = setting.get("flavor")
 
     args.max_dimension = inquirer.text(
-            message="Set maximum dimension for images",
-            default=str(args.max_dimension),
-        ).execute()
+        message="Set maximum dimension for images",
+        default=str(args.max_dimension),
+    ).execute()
     args.quality = inquirer.text(
-            message="Set the quality level for compressed images",
-            default=str(args.quality),
-        ).execute()
+        message="Set the quality level for compressed images",
+        default=str(args.quality),
+    ).execute()
     args.description = inquirer.confirm(
-            message="Would you like to provide descriptions for visually impaired users?",
-            default=args.description,
-        ).execute()
+        message="Would you like to provide descriptions for visually impaired users?",
+        default=args.description,
+    ).execute()
     args.flavor = inquirer.confirm(
-            message="Would you like to provide flavor text for the images?",
-            default=args.flavor,
-        ).execute()
-    
-    updated = settings_table.upsert(settings_doc,
+        message="Would you like to provide flavor text for the images?",
+        default=args.flavor,
+    ).execute()
+
+    updated = settings_table.upsert(
+        settings_doc,
         {
             "max_dimension": args.max_dimension,
             "quality": args.quality,
             "description": args.description,
             "flavor": args.flavor,
-        })
+        },
+    )
     logging.debug(f"Updated: {updated}")
-    
 
 
-def update_event_posted(db, event_name, user, platform):
+def update_event_posted(db, event_name, user, platform, uri, link):
     db.insert(
         {
             "event": event_name,
             "where": platform,
             "account": santitize_text(user),
             "date": pendulum.now().timestamp(),
+            "link": link,
+            "uri": uri,
         }
     )
 
@@ -483,7 +484,7 @@ def get_filter_from_values(
             and filter.get("color") == color
             and filter.get("sharpness") == sharpness
         ):
-            return filter.get("name","None")
+            return filter.get("name", "None")
     return "None"
 
 
@@ -493,11 +494,12 @@ def main(args):
     console = Console()
     level = getattr(logging, args.log.upper())
     logging.basicConfig(level=level)
+    logger = logging.getLogger(__name__)
     location_table = get_location_table()
     filter_table = get_filter_table()
 
     # Project initialization
-    project_db, photos_path = set_project(console, config, args)
+    project_db, photos_path = set_project(logger, config, args)
     event_table = get_events_table(project_db)
     photos_table = get_photos_table(project_db)
     args = get_settings(project_db, args)
@@ -509,7 +511,7 @@ def main(args):
     non_hidden_files = list(get_non_hidden_files(photos_path))
 
     if non_hidden_files == [(None, None)]:
-        console.print(
+        logging.fatal(
             "No files found in the project folder's photos directory, please add photos before running."
         )
         return
@@ -526,15 +528,15 @@ def main(args):
             if photo_record:
                 rotation_angle = photo_record.get("rotation", 0)
                 quality = photo_record.get("quality", args.quality)
-                description = photo_record.get("description",args.description)
-                flavor = photo_record.get("flavor",args.flavor)
+                description = photo_record.get("description", args.description)
+                flavor = photo_record.get("flavor", args.flavor)
                 brightness = photo_record.get("brightness", 1.0)
                 contrast = photo_record.get("contrast", 1.0)
                 color = photo_record.get("color", 1.0)
                 sharpness = photo_record.get("sharpness", 1.0)
             else:
                 rotation_angle = 0
-                quality = 80
+                quality = args.quality
                 description = ""
                 flavor = ""
                 brightness = 1.0
@@ -733,7 +735,9 @@ def main(args):
                 event_name = None
 
             if item_duplicate(event_table, date_object, lat, lon):
-                logging.debug("This item appears to be a duplicate and will be skipped.")
+                logging.debug(
+                    "This item appears to be a duplicate and will be skipped."
+                )
                 continue
 
             if args.event and not event_name:
