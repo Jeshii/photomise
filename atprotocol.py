@@ -12,6 +12,7 @@ import photomise as base
 import configparser
 import random
 import getpass
+import os
 
 SERVICE_NAME = "photomise-atprotocol-bluesky"
 
@@ -91,14 +92,17 @@ def main(args):
             message="Choose an event to post", choices=events.keys()
         ).execute()
     else:
-        random_event = random.choice(events)
+        random_event = random.choice(list(events.values()))
         event_name = random_event["event"]
 
     if not args.text:
         default_text = f"{events[event_name]["location"]} ({pendulum.from_timestamp(events[event_name]["date"]).format("YYYY-MMM-DD")})"
-        args.text = inquirer.text(
-            message="Enter the text for the post", default=default_text
-        ).execute()
+        if args.default:
+            args.text = default_text
+        else:
+            args.text = inquirer.text(
+                message="Enter the text for the post", default=default_text
+            ).execute()
 
     password = get_password_from_keyring(logger, args.user)
     try:
@@ -114,75 +118,75 @@ def main(args):
     images = []
     image_aspect_ratios = []
     for path in events[event_name]["photos"]:
-
-        height, width = base.get_image_aspect_ratio(path)
-        if not height or not width:
-            height = 1
-            width = 1
-        image_aspect_ratios.append(
-            models.AppBskyEmbedDefs.AspectRatio(height=height, width=width)
-        )
-
-        photo_entry = photos_table.get(where("path") == path)
-        if photo_entry:
-            rotation_angle = photo_entry.get("rotation", 0)
-            quality = photo_entry.get("quality", 85)
-            description = photo_entry.get("description","")
-        else:
-            rotation_angle = 0
-            quality = 85
-            description = ""
-        while True:
-            compressed_image = base.compress_image(
-                path,
-                rotation_angle=rotation_angle,
-                quality=quality,
-                show=args.view,
+        if os.path.exists(path):
+            height, width = base.get_image_aspect_ratio(path)
+            if not height or not width:
+                height = 1
+                width = 1
+            image_aspect_ratios.append(
+                models.AppBskyEmbedDefs.AspectRatio(height=height, width=width)
             )
-            if (
-                not args.view
-                or inquirer.confirm(message="Does the image look okay?").execute()
-            ):
-                images.append(compressed_image)
-                break
+
+            photo_entry = photos_table.get(where("path") == path)
+            if photo_entry:
+                rotation_angle = photo_entry.get("rotation", 0)
+                quality = photo_entry.get("quality", 85)
+                description = photo_entry.get("description","")
             else:
-                quality = inquirer.select(
-                    message="Choose a quality level",
-                    choices=[10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
-                ).execute()
-
-                rotation_angle = inquirer.select(
-                    message="Choose a rotation angle",
-                    choices=[0, 90, 180, 270],
-                ).execute()
-
-                photos_table.insert(
-                    {
-                        "path": path,
-                        "rotation": rotation_angle,
-                        "quality": quality,
-                    }
+                rotation_angle = 0
+                quality = 85
+                description = ""
+            while True:
+                compressed_image = base.compress_image(
+                    path,
+                    rotation_angle=rotation_angle,
+                    quality=quality,
+                    show=args.view,
                 )
+                if (
+                    not args.view
+                    or inquirer.confirm(message="Does the image look okay?").execute()
+                ):
+                    images.append(compressed_image)
+                    break
+                else:
+                    quality = inquirer.select(
+                        message="Choose a quality level",
+                        choices=[10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
+                    ).execute()
 
-        if args.description:
-            image_alts.append(
-                inquirer.text(
-                    message=f"Enter a description for visual impaired users for {path}",
-                    default=description).execute()
+                    rotation_angle = inquirer.select(
+                        message="Choose a rotation angle",
+                        choices=[0, 90, 180, 270],
+                    ).execute()
+
+                    photos_table.insert(
+                        {
+                            "path": path,
+                            "rotation": rotation_angle,
+                            "quality": quality,
+                        }
+                    )
+
+            if args.description and not args.default:
+                image_alts.append(
+                    inquirer.text(
+                        message=f"Enter a description for visual impaired users for {path}",
+                        default=description).execute()
+                )
+                image_alts.append(description)
+
+        try:
+            client.send_images(
+                text=args.text,
+                images=images,
+                image_alts=image_alts,
+                image_aspect_ratios=image_aspect_ratios,
             )
-            image_alts.append(description)
-
-    try:
-        client.send_images(
-            text=args.text,
-            images=images,
-            image_alts=image_alts,
-            image_aspect_ratios=image_aspect_ratios,
-        )
-    except Exception as e:
-        console.print(f"[bold red]Upload failed: {e}")
-        # Maybe add a retry mechanism here
-        return
+        except Exception as e:
+            console.print(f"[bold red]Upload failed: {e}")
+            # Maybe add a retry mechanism here
+            return
 
     if client:
         console.print(client)
@@ -251,6 +255,24 @@ def parse_args():
         "-d",
         action="store_true",
         help="Ask to store a description of the photo for viewing impaired users (default is use flavor text)",
+    )
+
+    parser.add_argument(
+        "--default",
+        help="Accept defaults for all questions",
+        action="store_true",
+    )
+
+    parser.add_argument(
+        "--max_dimension",
+        help="Set maximum dimension for images",
+        default=1200,
+    )
+
+    parser.add_argument(
+        "--quality",
+        help="Set the quality level for compressed images",
+        default=80,
     )
 
     args = parser.parse_args()
