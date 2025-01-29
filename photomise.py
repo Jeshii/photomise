@@ -543,7 +543,7 @@ def main(args):
                 contrast = 1.0
                 color = 1.0
                 sharpness = 1.0
-            if args.view:
+            if (args.view and not photo_record) or args.all:
                 while True:
                     _ = compress_image(
                         image_path=file_path,
@@ -609,12 +609,12 @@ def main(args):
                                 color = filter.get("color", 1.0)
                                 sharpness = filter.get("sharpness", 1.0)
 
-            if args.description and not description:
+            if (args.description and not description) or args.all:
                 description = inquirer.text(
-                    message="Enter a description for viewing impaired users for this image:",
+                    message="Enter a description for visually impaired users about this image:",
                     default=description,
                 ).execute()
-            if args.flavor and not flavor:
+            if (args.flavor and not flavor) or args.all:
                 flavor = inquirer.text(
                     message=f"Enter flavor text for this image: {file_path}",
                     default=flavor,
@@ -643,9 +643,11 @@ def main(args):
                 lat, lon = extract_gps(exif_tags)
 
                 date_object = extract_datetime(exif_tags)
-            except Exception:
-                console.print("Error extracting exif info")
-                logging.exception("Error extracting exif info")
+            except piexif.InvalidImageDataError:
+                logging.warning("Invalid image data")
+                continue
+            except Exception as e:
+                logging.info(f"Error extracting exif info: {e}")
 
             if not date_object:
                 date_object = pendulum.parse(
@@ -809,7 +811,7 @@ def parse_args():
         "--description",
         "-d",
         action="store_true",
-        help="Ask to store a description of the photo for viewing impaired users (default is use flavor text)",
+        help="Ask to store a description of the photo for visually impaired users (default is use flavor text)",
     )
 
     parser.add_argument(
@@ -835,6 +837,13 @@ def parse_args():
         "--quality",
         help="Set the quality level for compressed images",
         default=80,
+    )
+
+    parser.add_argument(
+        "--all",
+        "-a",
+        help="Process all images in the project directory (default is to process only new ones)",
+        action="store_true",
     )
 
     args = parser.parse_args()
