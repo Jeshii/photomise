@@ -11,7 +11,7 @@ from rich.console import Console
 from urllib.parse import quote
 import configparser
 import logging
-from PIL import Image
+from PIL import Image, ImageEnhance
 from io import BytesIO
 import json
 
@@ -70,9 +70,13 @@ def extract_gps(tags: dict) -> tuple:
 
 def compress_image(
     image_path: str,
-    quality: int = 85,
+    quality: int = 80,
     max_dimension: int = 1200,
     rotation_angle: int = 0,
+    brightness: float = 1.0,
+    contrast: float = 1.0,
+    color: float = 1.0,
+    sharpness: float = 1.0,
     show: bool = False,
 ):
     try:
@@ -94,6 +98,14 @@ def compress_image(
             new_height = int(height * scale_factor)
             image = image.resize((new_width, new_height), Image.LANCZOS)
 
+        image = enhance_image(
+            image,
+            brightness,
+            contrast,
+            color,
+            sharpness,
+        )
+
         image.save(img_io, format="JPEG", optimize=True, quality=quality)
         if show:
             image.show()
@@ -103,6 +115,29 @@ def compress_image(
         return img_io
     except Exception as e:
         print(f"Error compressing image: {e}")
+
+
+def enhance_image(
+    image: Image.Image,
+    brightness: float = 1.0,
+    contrast: float = 1.0,
+    color: float = 1.0,
+    sharpness: float = 1.0,
+) -> Image.Image:
+
+    enhancer = ImageEnhance.Brightness(image)
+    image = enhancer.enhance(brightness)
+
+    enhancer = ImageEnhance.Contrast(image)
+    image = enhancer.enhance(contrast)
+
+    enhancer = ImageEnhance.Color(image)
+    image = enhancer.enhance(color)
+
+    enhancer = ImageEnhance.Sharpness(image)
+    image = enhancer.enhance(sharpness)
+
+    return image
 
 
 def extract_datetime(tags: dict) -> pendulum:
@@ -175,8 +210,18 @@ def get_project_db(project: str, project_dir: str) -> TinyDB:
     return TinyDB(f"{project_dir}{project}.json")
 
 
-def get_location_table(database: str) -> TinyDB:
-    return database.table("locations")
+def get_global_db() -> TinyDB:
+    return TinyDB("global.json")
+
+
+def get_location_table() -> TinyDB:
+    global_db = get_global_db()
+    return global_db.table("locations")
+
+
+def get_filter_table() -> TinyDB:
+    global_db = get_global_db()
+    return global_db.table("filters")
 
 
 def get_events_table(database: str) -> TinyDB:
@@ -194,6 +239,7 @@ def get_project_table(database: str) -> TinyDB:
 def get_photos_table(database: str) -> TinyDB:
     return database.table("photos")
 
+
 def get_accounts_table(database: str) -> TinyDB:
     return database.table("accounts")
 
@@ -206,6 +252,11 @@ def get_settings(database: str, args: argparse.Namespace) -> TinyDB:
         args.description = settings[0].get("description")
     if not args.flavor:
         args.flavor = settings[0].get("flavor")
+    if not args.max_dimension:
+        args.max_dimension = settings[0].get("max_dimension")
+    if not args.quality:
+        args.quality = settings[0].get("quality")
+    logging.debug(f"Arguments: {args}")
     return args
 
 
@@ -224,8 +275,30 @@ def get_image_aspect_ratio(image_path: str) -> tuple:
             return None, None
 
 
+def make_min_max_prompt(
+    message: str, default: float, min_val: float = 0.0, max_val: float = 2.0
+) -> float:
+    result = inquirer.text(
+        message=f"{message}",
+        default=str(default),
+        filter=set_min_max,
+        invalid_message=f"Please enter a number between {min_val} and {max_val}",
+    ).execute()
+
+    return float(result)
+
+
+def set_min_max(value: float) -> float:
+    value = float(value)
+    if value < 0:
+        return 0
+    elif value > 2:
+        return 2
+    return value
+
+
 def set_project(
-    console: Console, config: configparser.ConfigParser, args: argparse.Namespace
+    logger: logging, config: configparser.ConfigParser, args: argparse.Namespace
 ) -> tuple[TinyDB, str]:
     if os.path.exists(CONFIG_FILE):
         config.read(CONFIG_FILE)
@@ -238,11 +311,11 @@ def set_project(
     }
 
     projects = config_dict.get("Projects", {})
-    
+
     project_set_up = False
     if not projects:
         project_set_up = True
-        console.print("No projects found in config.ini")
+        logger.warning("No projects found in config.ini")
         args.project = inquirer.text("Please enter a project name").execute()
         project_path = inquirer.text("Please the path for the project").execute()
         args.description = inquirer.confirm(
@@ -263,13 +336,25 @@ def set_project(
             try:
                 config.write(configfile)
             except IOError as e:
-                console.print(f"Error writing to config file: {e}")
-                logging.exception("Error writing to config file")
+                logging.exception(f"Error writing to config file: {e}")
 
-    if not args.project:
-        args.project = inquirer.select(
-            message="Select a project", choices=projects.keys()
+    while not args.project or args.project == "Settings":
+        project_choices = {"Settings": "Settings"}
+        for name, path in projects.items():
+            project_choices[f"{name} ({path})"] = name
+        project_choice = inquirer.select(
+            message="Select a project", choices=project_choices.keys()
         ).execute()
+        args.project = project_choices[project_choice]
+        if args.project == "Settings":
+            set_global_settings(args=args)
+            while True:
+                if not inquirer.confirm("Make a filter?").execute():
+                    break
+                updated = make_filter()
+                if updated:
+                    logger.info(f"""Filter "{updated}" settings saved.""")
+
     db_path = f"{projects[args.project]}/db/"
     photos_path = f"{projects[args.project]}/photos/"
 
@@ -292,24 +377,115 @@ def set_project(
             {
                 "project_name": args.project,
                 "project_path": projects[args.project],
-                "description": args.description, 
+                "description": args.description,
                 "flavor": args.flavor,
-            }, 
-            Settings.id == 1
+            },
+            Settings.id == 1,
         )
 
     return project_db, photos_path
 
 
-def update_event_posted(db, event_name, user, platform):
+def make_filter():
+    filter_name = inquirer.text("Enter a name for this filter").execute()
+    global_db = get_global_db()
+    filter_table = global_db.table("filters")
+    Filter = Query()
+    filter = filter_table.search(Filter.name == filter_name)
+    logging.debug(f"Filter: {filter}")
+    brightness = make_min_max_prompt(
+        "Adjust brightness",
+        filter[0].get("brightness", 1.0),
+    )
+    contrast = make_min_max_prompt("Adjust contrast", filter[0].get("contrast", 1.0))
+    color = make_min_max_prompt("Adjust color", filter[0].get("color", 1.0))
+    sharpness = make_min_max_prompt("Adjust sharpness", filter[0].get("sharpness", 1.0))
+
+    updated = filter_table.upsert(
+        {
+            "name": filter_name,
+            "brightness": brightness,
+            "contrast": contrast,
+            "color": color,
+            "sharpness": sharpness,
+        },
+        Filter.name == filter_name,
+    )
+
+    if updated:
+        return filter_name
+    else:
+        return False
+
+
+def set_global_settings(args: argparse.Namespace):
+    global_db = get_global_db()
+    settings_table = global_db.table("settings")
+    settings_doc = settings_table.get(doc_id=1)
+    for setting in settings_table.all():
+        args.max_dimension = setting.get("max_dimension")
+        args.quality = setting.get("quality")
+        args.description = setting.get("description")
+        args.flavor = setting.get("flavor")
+
+    args.max_dimension = inquirer.text(
+        message="Set maximum dimension for images",
+        default=str(args.max_dimension),
+    ).execute()
+    args.quality = inquirer.text(
+        message="Set the quality level for compressed images",
+        default=str(args.quality),
+    ).execute()
+    args.description = inquirer.confirm(
+        message="Would you like to provide descriptions for visually impaired users?",
+        default=args.description,
+    ).execute()
+    args.flavor = inquirer.confirm(
+        message="Would you like to provide flavor text for the images?",
+        default=args.flavor,
+    ).execute()
+
+    updated = settings_table.upsert(
+        settings_doc,
+        {
+            "max_dimension": args.max_dimension,
+            "quality": args.quality,
+            "description": args.description,
+            "flavor": args.flavor,
+        },
+    )
+    logging.debug(f"Updated: {updated}")
+
+
+def update_event_posted(db, event_name, user, platform, uri, link):
     db.insert(
         {
             "event": event_name,
             "where": platform,
             "account": santitize_text(user),
             "date": pendulum.now().timestamp(),
+            "link": link,
+            "uri": uri,
         }
     )
+
+
+def get_filter_from_values(
+    filter_table: TinyDB,
+    brightness: float,
+    contrast: float,
+    color: float,
+    sharpness: float,
+) -> str:
+    for filter in filter_table.all():
+        if (
+            filter.get("brightness") == brightness
+            and filter.get("contrast") == contrast
+            and filter.get("color") == color
+            and filter.get("sharpness") == sharpness
+        ):
+            return filter.get("name", "None")
+    return "None"
 
 
 def main(args):
@@ -318,11 +494,13 @@ def main(args):
     console = Console()
     level = getattr(logging, args.log.upper())
     logging.basicConfig(level=level)
+    logger = logging.getLogger(__name__)
+    location_table = get_location_table()
+    filter_table = get_filter_table()
 
     # Project initialization
-    project_db, photos_path = set_project(console, config, args)
+    project_db, photos_path = set_project(logger, config, args)
     event_table = get_events_table(project_db)
-    location_table = get_location_table(project_db)
     photos_table = get_photos_table(project_db)
     args = get_settings(project_db, args)
     level = getattr(logging, args.log.upper())
@@ -333,7 +511,7 @@ def main(args):
     non_hidden_files = list(get_non_hidden_files(photos_path))
 
     if non_hidden_files == [(None, None)]:
-        console.print(
+        logging.fatal(
             "No files found in the project folder's photos directory, please add photos before running."
         )
         return
@@ -344,27 +522,37 @@ def main(args):
             lon = None
 
             file_path = f"{dir}{file}"
-            console.print(f"Checking {file}...")
-            if photos_table.search(where("path") == file_path):
-                rotation_angle = photos_table.get(where("path") == file_path).get(
-                    "rotation"
-                )
-                quality = photos_table.get(where("path") == file_path).get("quality")
-                description = photos_table.get(where("path") == file_path).get(
-                    "description"
-                )
-                flavor = photos_table.get(where("path") == file_path).get("flavor")
+            console.print()
+            console.print(f"[bold]Checking {file_path}[/bold]")
+            photo_record = photos_table.get(where("path") == file_path)
+            if photo_record:
+                rotation_angle = photo_record.get("rotation", 0)
+                quality = photo_record.get("quality", args.quality)
+                description = photo_record.get("description", args.description)
+                flavor = photo_record.get("flavor", args.flavor)
+                brightness = photo_record.get("brightness", 1.0)
+                contrast = photo_record.get("contrast", 1.0)
+                color = photo_record.get("color", 1.0)
+                sharpness = photo_record.get("sharpness", 1.0)
             else:
                 rotation_angle = 0
-                quality = 85
+                quality = args.quality
                 description = ""
                 flavor = ""
+                brightness = 1.0
+                contrast = 1.0
+                color = 1.0
+                sharpness = 1.0
             if args.view:
                 while True:
                     _ = compress_image(
-                        file_path,
+                        image_path=file_path,
                         rotation_angle=rotation_angle,
                         quality=quality,
+                        brightness=brightness,
+                        contrast=contrast,
+                        color=color,
+                        sharpness=sharpness,
                         show=True,
                     )
                     if inquirer.confirm(message="Does the image look okay?").execute():
@@ -373,35 +561,80 @@ def main(args):
                         quality = inquirer.select(
                             message="Choose a quality level",
                             choices=[10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
+                            default=quality,
                         ).execute()
 
                         rotation_angle = inquirer.select(
                             message="Choose a rotation angle",
                             choices=[0, 90, 180, 270],
+                            default=rotation_angle,
                         ).execute()
 
+                        filter_choices = ["None"] + [
+                            filter["name"] for filter in filter_table.all()
+                        ]
+                        filter_choices.append("Custom")
 
-            if args.description:
+                        filter_to_apply = inquirer.select(
+                            message="Choose a filter",
+                            choices=filter_choices,
+                            default=get_filter_from_values(
+                                filter_table, brightness, contrast, color, sharpness
+                            ),
+                        ).execute()
+
+                        match filter_to_apply:
+                            case "Custom":
+                                brightness = make_min_max_prompt(
+                                    "Adjust brightness", brightness
+                                )
+                                contrast = make_min_max_prompt(
+                                    "Adjust contrast", contrast
+                                )
+                                color = make_min_max_prompt("Adjust color", color)
+                                sharpness = make_min_max_prompt(
+                                    "Adjust sharpness", sharpness
+                                )
+                            case "None":
+                                brightness = 1.0
+                                contrast = 1.0
+                                color = 1.0
+                                sharpness = 1.0
+                            case _:
+                                filter = filter_table.get(
+                                    where("name") == filter_to_apply
+                                )
+                                brightness = filter.get("brightness", 1.0)
+                                contrast = filter.get("contrast", 1.0)
+                                color = filter.get("color", 1.0)
+                                sharpness = filter.get("sharpness", 1.0)
+
+            if args.description and not description:
                 description = inquirer.text(
-                    message=f"Enter a description for viewing impaired users for this image: {file_path}",
+                    message="Enter a description for viewing impaired users for this image:",
                     default=description,
                 ).execute()
-
-                photos_table
-            if args.flavor:
+            if args.flavor and not flavor:
                 flavor = inquirer.text(
                     message=f"Enter flavor text for this image: {file_path}",
                     default=flavor,
                 ).execute()
 
-            photos_table.insert(
+            Photo = Query()
+
+            photos_table.upsert(
                 {
                     "path": file_path,
                     "rotation": rotation_angle,
                     "quality": quality,
                     "description": description,
                     "flavor": flavor,
-                }
+                    "brightness": brightness,
+                    "contrast": contrast,
+                    "saturation": color,
+                    "sharpness": sharpness,
+                },
+                Photo.path == file_path,
             )
 
             try:
@@ -502,7 +735,9 @@ def main(args):
                 event_name = None
 
             if item_duplicate(event_table, date_object, lat, lon):
-                console.print("This item appears to be a duplicate. Skipping...")
+                logging.debug(
+                    "This item appears to be a duplicate and will be skipped."
+                )
                 continue
 
             if args.event and not event_name:
@@ -588,6 +823,18 @@ def parse_args():
         help="Set logging level",
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+    )
+
+    parser.add_argument(
+        "--max_dimension",
+        help="Set maximum dimension for images",
+        default=1200,
+    )
+
+    parser.add_argument(
+        "--quality",
+        help="Set the quality level for compressed images",
+        default=80,
     )
 
     args = parser.parse_args()

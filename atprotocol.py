@@ -4,7 +4,6 @@ import argparse
 from tinydb import TinyDB, where
 import pendulum
 from InquirerPy import inquirer
-from rich.console import Console
 from atproto import Client, models
 import keyring
 import logging
@@ -12,6 +11,7 @@ import photomise as base
 import configparser
 import random
 import getpass
+import os
 
 SERVICE_NAME = "photomise-atprotocol-bluesky"
 
@@ -57,13 +57,12 @@ def get_events_without_bluesky_posted(post_db: TinyDB, event_db: TinyDB):
 def main(args):
     # Basic initialization
     config = configparser.ConfigParser()
-    console = Console()
     level = getattr(logging, args.log.upper())
     logging.basicConfig(level=level)
     logger = logging.getLogger(__name__)
 
     # Project initialization
-    projects_db, _ = base.set_project(console, config, args)
+    projects_db, _ = base.set_project(logger, config, args)
     event_table = base.get_events_table(projects_db)
     posts_table = base.get_posts_table(projects_db)
     photos_table = base.get_photos_table(projects_db)
@@ -83,7 +82,7 @@ def main(args):
         events = base.get_all_events(event_table)
 
     if not events:
-        console.print("[bold red]No events found. Please run photomise first!")
+        logging.fatal("No events found. Please run photomise first.")
         return
 
     if not args.random:
@@ -91,103 +90,84 @@ def main(args):
             message="Choose an event to post", choices=events.keys()
         ).execute()
     else:
-        random_event = random.choice(events)
+        random_event = random.choice(list(events.values()))
         event_name = random_event["event"]
 
     if not args.text:
-        default_text = f"{events[event_name]["location"]} ({pendulum.from_timestamp(events[event_name]["date"]).format("YYYY-MMM-DD")})"
-        args.text = inquirer.text(
-            message="Enter the text for the post", default=default_text
-        ).execute()
+        args.text = f"{events[event_name]["location"]} ({pendulum.from_timestamp(events[event_name]["date"]).format("YYYY-MMM-DD")})"
 
     password = get_password_from_keyring(logger, args.user)
     try:
         client.login(args.user, password)
         if not client.me:
-            console.print("[bold red]Login failed!")
+            logging.fatal(f"Login failed: {client.error}")
             return
     except Exception as e:
-        console.print(f"[bold red]Login error: {e}")
+        logging.fatal(f"Login failed: {e}")
         return
 
     image_alts = []
     images = []
     image_aspect_ratios = []
     for path in events[event_name]["photos"]:
-
-        height, width = base.get_image_aspect_ratio(path)
-        if not height or not width:
-            height = 1
-            width = 1
-        image_aspect_ratios.append(
-            models.AppBskyEmbedDefs.AspectRatio(height=height, width=width)
-        )
-
-        photo_entry = photos_table.get(where("path") == path)
-        if photo_entry:
-            rotation_angle = photo_entry.get("rotation", 0)
-            quality = photo_entry.get("quality", 85)
-            description = photo_entry.get("description","")
-        else:
-            rotation_angle = 0
-            quality = 85
-            description = ""
-        while True:
-            compressed_image = base.compress_image(
-                path,
-                rotation_angle=rotation_angle,
-                quality=quality,
-                show=args.view,
+        if os.path.exists(path):
+            height, width = base.get_image_aspect_ratio(path)
+            if not height or not width:
+                height = 1
+                width = 1
+            image_aspect_ratios.append(
+                models.AppBskyEmbedDefs.AspectRatio(height=height, width=width)
             )
-            if (
-                not args.view
-                or inquirer.confirm(message="Does the image look okay?").execute()
-            ):
-                images.append(compressed_image)
-                break
+
+            photo_entry = photos_table.get(where("path") == path)
+            if photo_entry:
+                rotation_angle = photo_entry.get("rotation", 0)
+                quality = photo_entry.get("quality", 80)
+                description = photo_entry.get("description", "")
             else:
-                quality = inquirer.select(
-                    message="Choose a quality level",
-                    choices=[10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
-                ).execute()
+                rotation_angle = 0
+                quality = 80
+                description = ""
 
-                rotation_angle = inquirer.select(
-                    message="Choose a rotation angle",
-                    choices=[0, 90, 180, 270],
-                ).execute()
-
-                photos_table.insert(
-                    {
-                        "path": path,
-                        "rotation": rotation_angle,
-                        "quality": quality,
-                    }
+            try:
+                compressed_image = base.compress_image(
+                    path,
+                    rotation_angle=rotation_angle,
+                    quality=quality,
+                    show=args.view,
                 )
 
-        if args.description:
-            image_alts.append(
-                inquirer.text(
-                    message=f"Enter a description for visual impaired users for {path}",
-                    default=description).execute()
-            )
-            image_alts.append(description)
+                images.append(compressed_image)
+
+                image_alts.append(description)
+            except Exception as e:
+                logging.fatal(f"Error compressing image: {e}")
+                return
 
     try:
-        client.send_images(
+        response = client.send_images(
             text=args.text,
             images=images,
             image_alts=image_alts,
             image_aspect_ratios=image_aspect_ratios,
         )
     except Exception as e:
-        console.print(f"[bold red]Upload failed: {e}")
-        # Maybe add a retry mechanism here
+        logging.fatal(f"Upload failed: {e}")
         return
 
-    if client:
-        console.print(client)
-
-        base.update_event_posted(posts_table, event_name, args.user, "Bluesky")
+    if response:
+        try:
+            logging.debug(f"Response: {response}")
+            post_uri = response.uri if hasattr(response, "uri") else None
+            post_uri_parts = post_uri.split("/")
+            post_url = f"https://bsky.app/profile/{args.user}/post/{post_uri_parts[-1]}"
+            base.update_event_posted(
+                posts_table, event_name, args.user, "Bluesky", post_uri, post_url
+            )
+        except Exception as e:
+            logging.error(f"Error adding post to database: {e}")
+    else:
+        logging.error("No response from server")
 
 
 def parse_args():
@@ -237,20 +217,6 @@ def parse_args():
         "--project",
         "-p",
         help="Provide the name of the project to use",
-    )
-
-    parser.add_argument(
-        "--flavor",
-        "-f",
-        action="store_true",
-        help="Ask to store flavor text (default is use event name and date)",
-    )
-
-    parser.add_argument(
-        "--description",
-        "-d",
-        action="store_true",
-        help="Ask to store a description of the photo for viewing impaired users (default is use flavor text)",
     )
 
     args = parser.parse_args()
