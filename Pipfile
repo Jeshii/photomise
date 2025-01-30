@@ -6,7 +6,6 @@ name = "pypi"
 [packages]
 argparse = "*"
 pendulum = "*"
-tinydb = "*"
 geopy = "*"
 rich = "*"
 atproto = "*"
@@ -14,6 +13,7 @@ keyring = "*"
 piexif = "*"
 configparser = "*"
 pillow = "*"
+tinydb = "*"
 
 [dev-packages]
 
