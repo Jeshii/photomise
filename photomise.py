@@ -375,6 +375,7 @@ def set_project(
 
     return project_db, main_path, settings
 
+
 def make_json_readable(json_file_path: str) -> str:
     # Read the JSON file
     with open(json_file_path, "r") as file:
@@ -383,6 +384,7 @@ def make_json_readable(json_file_path: str) -> str:
     # Write the formatted JSON file
     with open(json_file_path, "w") as file:
         json.dump(data, file, indent=4, ensure_ascii=False)
+
 
 def make_filter():
     filter_name = inquirer.text("Enter a name for this filter").execute()
@@ -495,43 +497,53 @@ def convert_to_relative_path(file_path: str, project_path: str) -> str:
     except ValueError:
         return file_path
 
+
 def convert_to_absolute_path(relative_path: str, project_path: str) -> str:
     """Convert relative path to absolute path based on project directory."""
     if os.path.isabs(relative_path):
         return relative_path
     return os.path.join(project_path, relative_path)
 
+
 def find_events_with_photo(events_table: TinyDB, photo_path: str) -> list:
     """Find all events containing a specific photo."""
     events_with_photo = []
     for event in events_table.all():
-        if photo_path in event.get('photos', []):
+        if photo_path in event.get("photos", []):
             events_with_photo.append(event)
     return events_with_photo
 
-def handle_duplicate_events(events_table: TinyDB, events: list, photo_path: str) -> None:
+
+def handle_duplicate_events(
+    events_table: TinyDB, events: list, photo_path: str
+) -> None:
     """Handle events that contain the same photo."""
     if len(events) <= 1:
         return
 
     console = Console()
-    console.print(f"\n[yellow]Warning:[/yellow] Photo {photo_path} appears in multiple events:")
+    console.print(
+        f"\n[yellow]Warning:[/yellow] Photo {photo_path} appears in multiple events:"
+    )
     for idx, event in enumerate(events, 1):
-        console.print(f"{idx}. {event['event']} ({pendulum.from_timestamp(event['date']).format('YYYY-MM-DD')})")
-    
+        console.print(
+            f"{idx}. {event['event']} ({pendulum.from_timestamp(event['date']).format('YYYY-MM-DD')})"
+        )
+
     keep_idx = inquirer.select(
         message="Which event should keep this photo?",
-        choices=[str(i) for i in range(1, len(events) + 1)]
+        choices=[str(i) for i in range(1, len(events) + 1)],
     ).execute()
-    
+
     # Remove photo from all other events
     Event = Query()
     keep_event = events[int(keep_idx) - 1]
     for event in events:
-        if event['event'] != keep_event['event']:
-            photos = event.get('photos', [])
+        if event["event"] != keep_event["event"]:
+            photos = event.get("photos", [])
             photos.remove(photo_path)
-            events_table.update({'photos': photos}, Event.event == event['event'])
+            events_table.update({"photos": photos}, Event.event == event["event"])
+
 
 def main(args):
     # Basic initialization
@@ -553,7 +565,7 @@ def main(args):
 
     logging.debug(f"Arguments: {args}")
 
-    project_path = config['Projects'][args.project]
+    project_path = config["Projects"][args.project]
     non_hidden_files = list(get_non_hidden_files(photos_path))
 
     if non_hidden_files == [(None, None)]:
@@ -569,7 +581,7 @@ def main(args):
 
             file_path = f"{dir}/{file}"
             relative_path = convert_to_relative_path(file_path, project_path)
-            
+
             # Check for duplicates
             duplicate_events = find_events_with_photo(event_table, relative_path)
             if len(duplicate_events) > 1:
@@ -585,7 +597,7 @@ def main(args):
             if photo_record:
                 rotation_angle = photo_record.get("rotation", 0)
                 quality = photo_record.get("quality", settings.get("quality"))
-                description = photo_record.get("description","")
+                description = photo_record.get("description", "")
                 flavor = photo_record.get("flavor", "")
                 brightness = photo_record.get("brightness", 1.0)
                 contrast = photo_record.get("contrast", 1.0)
@@ -847,7 +859,7 @@ def main(args):
                     }
                 )
 
-        make_json_readable(f"{project_path}/db/{args.project}.json")        
+        make_json_readable(f"{project_path}/db/{args.project}.json")
 
 
 def parse_args():

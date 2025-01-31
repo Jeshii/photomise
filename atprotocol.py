@@ -93,9 +93,6 @@ def main(args):
         random_event = random.choice(list(events.values()))
         event_name = random_event["event"]
 
-    if not args.text:
-        args.text = f"{events[event_name]["location"]} ({pendulum.from_timestamp(events[event_name]["date"]).format("YYYY-MMM-DD")})"
-
     password = get_password_from_keyring(logger, args.user)
     try:
         client.login(args.user, password)
@@ -108,6 +105,7 @@ def main(args):
 
     image_alts = []
     images = []
+    flavors = []
     image_aspect_ratios = []
     logging.debug(f"Checking for photos in: {events[event_name]}")
     for path in events[event_name]["photos"]:
@@ -128,7 +126,10 @@ def main(args):
                 rotation_angle = photo_entry.get("rotation", 0)
                 quality = photo_entry.get("quality", 80)
                 description = photo_entry.get("description", "")
-                max_dimension = photo_entry.get("max_dimension", settings.get("max_dimension", 1200))
+                flavor = photo_entry.get("flavor", "")
+                max_dimension = photo_entry.get(
+                    "max_dimension", settings.get("max_dimension", 1200)
+                )
             else:
                 rotation_angle = 0
                 quality = settings.get("quality", settings.get("quality", 80))
@@ -144,12 +145,15 @@ def main(args):
                 )
 
                 images.append(compressed_image)
-
                 image_alts.append(description)
+                flavors.append(flavor)
             except Exception as e:
                 logging.fatal(f"Error compressing image: {e}")
                 return
-    
+
+    if not args.text:
+        args.text = f"{events[event_name]['location']} ({pendulum.from_timestamp(events[event_name]['date']).format('YYYY-MMM-DD')}){'\n\n'.join(flavors)}"
+
     if images:
         try:
             response = client.send_images(
@@ -167,7 +171,9 @@ def main(args):
                 logging.debug(f"Response: {response}")
                 post_uri = response.uri if hasattr(response, "uri") else None
                 post_uri_parts = post_uri.split("/")
-                post_url = f"https://bsky.app/profile/{args.user}/post/{post_uri_parts[-1]}"
+                post_url = (
+                    f"https://bsky.app/profile/{args.user}/post/{post_uri_parts[-1]}"
+                )
                 base.update_event_posted(
                     posts_table, event_name, args.user, "Bluesky", post_uri, post_url
                 )
@@ -177,7 +183,7 @@ def main(args):
             logging.error("No response from server")
     else:
         logging.error("No images to upload")
-    
+
     base.make_json_readable(f"{main_path}/db/{args.project}.json")
 
 
