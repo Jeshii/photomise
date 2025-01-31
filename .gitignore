@@ -4,3 +4,6 @@
 
 # Ignore ds store
 .DS_Store
+
+# Ignore all files in the directory
+__pycache__/
