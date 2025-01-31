@@ -244,20 +244,13 @@ def get_accounts_table(database: str) -> TinyDB:
     return database.table("accounts")
 
 
-def get_settings(database: str, args: argparse.Namespace) -> TinyDB:
+def get_settings(database: str) -> TinyDB:
     settings_table = database.table("settings")
     settings = settings_table.all()
-    logging.debug(f"Settings: {settings}")
-    if not args.description:
-        args.description = settings[0].get("description")
-    if not args.flavor:
-        args.flavor = settings[0].get("flavor")
-    if not args.max_dimension:
-        args.max_dimension = settings[0].get("max_dimension")
-    if not args.quality:
-        args.quality = settings[0].get("quality")
-    logging.debug(f"Arguments: {args}")
-    return args
+    logging.debug(f"Settings from DB: {settings}")
+    config = settings[0]
+    logging.debug(f"Settings Dictionary: {config}")
+    return config
 
 
 def get_image_aspect_ratio(image_path: str) -> tuple:
@@ -299,7 +292,9 @@ def set_min_max(value: float) -> float:
 
 def set_project(
     logger: logging, config: configparser.ConfigParser, args: argparse.Namespace
-) -> tuple[TinyDB, str]:
+) -> tuple[TinyDB, str, dict]:
+    settings = {}
+
     if os.path.exists(CONFIG_FILE):
         config.read(CONFIG_FILE)
 
@@ -318,10 +313,10 @@ def set_project(
         logger.warning("No projects found in config.ini")
         args.project = inquirer.text("Please enter a project name").execute()
         project_path = inquirer.text("Please the path for the project").execute()
-        args.description = inquirer.confirm(
+        settings["description"] = inquirer.confirm(
             "Would you like to provide descriptions for visually impaired users?"
         ).execute()
-        args.flavor = inquirer.confirm(
+        settings["flavor"] = inquirer.confirm(
             "Would you like to provide flavor text for the images?"
         ).execute()
         if not os.path.exists(project_path):
@@ -347,7 +342,7 @@ def set_project(
         ).execute()
         args.project = project_choices[project_choice]
         if args.project == "Settings":
-            set_global_settings(args=args)
+            settings = set_global_settings()
             while True:
                 if not inquirer.confirm("Make a filter?").execute():
                     break
@@ -355,20 +350,15 @@ def set_project(
                 if updated:
                     logger.info(f"""Filter "{updated}" settings saved.""")
 
+    main_path = projects[args.project]
     db_path = f"{projects[args.project]}/db/"
-    photos_path = f"{projects[args.project]}/photos/"
 
-    # Read the JSON file
-    with open(f"{db_path}{args.project}.json", "r") as file:
-        data = json.load(file)
-
-    # Write the formatted JSON file
-    with open(f"{db_path}{args.project}.json", "w") as file:
-        json.dump(data, file, indent=4, ensure_ascii=False)
+    make_json_readable(f"{db_path}{args.project}.json")
 
     project_db = get_project_db(args.project, db_path)
 
-    args = get_settings(project_db, args)
+    if not settings:
+        settings = get_settings(project_db)
 
     if project_set_up:
         settings_table = project_db.table("settings")
@@ -377,14 +367,22 @@ def set_project(
             {
                 "project_name": args.project,
                 "project_path": projects[args.project],
-                "description": args.description,
-                "flavor": args.flavor,
+                "description": settings.get("description"),
+                "flavor": settings.get("flavor"),
             },
             Settings.id == 1,
         )
 
-    return project_db, photos_path
+    return project_db, main_path, settings
 
+def make_json_readable(json_file_path: str) -> str:
+    # Read the JSON file
+    with open(json_file_path, "r") as file:
+        data = json.load(file)
+
+    # Write the formatted JSON file
+    with open(json_file_path, "w") as file:
+        json.dump(data, file, indent=4, ensure_ascii=False)
 
 def make_filter():
     filter_name = inquirer.text("Enter a name for this filter").execute()
@@ -418,43 +416,45 @@ def make_filter():
         return False
 
 
-def set_global_settings(args: argparse.Namespace):
+def set_global_settings() -> None:
+    settings = {}
     global_db = get_global_db()
     settings_table = global_db.table("settings")
     settings_doc = settings_table.get(doc_id=1)
     for setting in settings_table.all():
-        args.max_dimension = setting.get("max_dimension")
-        args.quality = setting.get("quality")
-        args.description = setting.get("description")
-        args.flavor = setting.get("flavor")
+        settings["max_dimension"] = setting.get("max_dimension")
+        settings["quality"] = setting.get("quality")
+        settings["description"] = setting.get("description")
+        settings["flavor"] = setting.get("flavor")
 
-    args.max_dimension = inquirer.text(
+    settings["max_dimension"] = inquirer.text(
         message="Set maximum dimension for images",
-        default=str(args.max_dimension),
+        default=str(settings.get("max_dimension")),
     ).execute()
-    args.quality = inquirer.text(
+    settings["quality"] = inquirer.text(
         message="Set the quality level for compressed images",
-        default=str(args.quality),
+        default=str(settings.get("quality")),
     ).execute()
-    args.description = inquirer.confirm(
+    settings["description"] = inquirer.confirm(
         message="Would you like to provide descriptions for visually impaired users?",
-        default=args.description,
+        default=settings.get("description"),
     ).execute()
-    args.flavor = inquirer.confirm(
+    settings["flavor"] = inquirer.confirm(
         message="Would you like to provide flavor text for the images?",
-        default=args.flavor,
+        default=settings.get("flavor"),
     ).execute()
 
     updated = settings_table.upsert(
         settings_doc,
         {
-            "max_dimension": args.max_dimension,
-            "quality": args.quality,
-            "description": args.description,
-            "flavor": args.flavor,
+            "max_dimension": settings.get("max_dimension"),
+            "quality": settings.get("quality"),
+            "description": settings.get("description"),
+            "flavor": settings.get("flavor"),
         },
     )
     logging.debug(f"Updated: {updated}")
+    return settings
 
 
 def update_event_posted(db, event_name, user, platform, uri, link):
@@ -488,6 +488,51 @@ def get_filter_from_values(
     return "None"
 
 
+def convert_to_relative_path(file_path: str, project_path: str) -> str:
+    """Convert absolute path to relative path based on project directory."""
+    try:
+        return os.path.relpath(file_path, project_path)
+    except ValueError:
+        return file_path
+
+def convert_to_absolute_path(relative_path: str, project_path: str) -> str:
+    """Convert relative path to absolute path based on project directory."""
+    if os.path.isabs(relative_path):
+        return relative_path
+    return os.path.join(project_path, relative_path)
+
+def find_events_with_photo(events_table: TinyDB, photo_path: str) -> list:
+    """Find all events containing a specific photo."""
+    events_with_photo = []
+    for event in events_table.all():
+        if photo_path in event.get('photos', []):
+            events_with_photo.append(event)
+    return events_with_photo
+
+def handle_duplicate_events(events_table: TinyDB, events: list, photo_path: str) -> None:
+    """Handle events that contain the same photo."""
+    if len(events) <= 1:
+        return
+
+    console = Console()
+    console.print(f"\n[yellow]Warning:[/yellow] Photo {photo_path} appears in multiple events:")
+    for idx, event in enumerate(events, 1):
+        console.print(f"{idx}. {event['event']} ({pendulum.from_timestamp(event['date']).format('YYYY-MM-DD')})")
+    
+    keep_idx = inquirer.select(
+        message="Which event should keep this photo?",
+        choices=[str(i) for i in range(1, len(events) + 1)]
+    ).execute()
+    
+    # Remove photo from all other events
+    Event = Query()
+    keep_event = events[int(keep_idx) - 1]
+    for event in events:
+        if event['event'] != keep_event['event']:
+            photos = event.get('photos', [])
+            photos.remove(photo_path)
+            events_table.update({'photos': photos}, Event.event == event['event'])
+
 def main(args):
     # Basic initialization
     config = configparser.ConfigParser()
@@ -499,15 +544,16 @@ def main(args):
     filter_table = get_filter_table()
 
     # Project initialization
-    project_db, photos_path = set_project(logger, config, args)
+    project_db, main_path, settings = set_project(logger, config, args)
+    photos_path = f"{main_path}/photos"
     event_table = get_events_table(project_db)
     photos_table = get_photos_table(project_db)
-    args = get_settings(project_db, args)
     level = getattr(logging, args.log.upper())
     logging.basicConfig(level=level)
 
     logging.debug(f"Arguments: {args}")
 
+    project_path = config['Projects'][args.project]
     non_hidden_files = list(get_non_hidden_files(photos_path))
 
     if non_hidden_files == [(None, None)]:
@@ -521,22 +567,33 @@ def main(args):
             lat = None
             lon = None
 
-            file_path = f"{dir}{file}"
+            file_path = f"{dir}/{file}"
+            relative_path = convert_to_relative_path(file_path, project_path)
+            
+            # Check for duplicates
+            duplicate_events = find_events_with_photo(event_table, relative_path)
+            if len(duplicate_events) > 1:
+                handle_duplicate_events(event_table, duplicate_events, relative_path)
+
             console.print()
             console.print(f"[bold]Checking {file_path}[/bold]")
-            photo_record = photos_table.get(where("path") == file_path)
+            need_to_convert_path = False
+            photo_record = photos_table.get(where("path") == relative_path)
+            if not photo_record:
+                photo_record = photos_table.get(where("path") == file_path)
+                need_to_convert_path = True
             if photo_record:
                 rotation_angle = photo_record.get("rotation", 0)
-                quality = photo_record.get("quality", args.quality)
-                description = photo_record.get("description", args.description)
-                flavor = photo_record.get("flavor", args.flavor)
+                quality = photo_record.get("quality", settings.get("quality"))
+                description = photo_record.get("description","")
+                flavor = photo_record.get("flavor", "")
                 brightness = photo_record.get("brightness", 1.0)
                 contrast = photo_record.get("contrast", 1.0)
                 color = photo_record.get("color", 1.0)
                 sharpness = photo_record.get("sharpness", 1.0)
             else:
                 rotation_angle = 0
-                quality = args.quality
+                quality = settings.get("quality")
                 description = ""
                 flavor = ""
                 brightness = 1.0
@@ -609,33 +666,49 @@ def main(args):
                                 color = filter.get("color", 1.0)
                                 sharpness = filter.get("sharpness", 1.0)
 
-            if (args.description and not description) or args.all:
+            if (settings.get("description") and not description) or args.all:
                 description = inquirer.text(
                     message="Enter a description for visually impaired users about this image:",
                     default=description,
                 ).execute()
-            if (args.flavor and not flavor) or args.all:
+            if (settings.get("flavor") and not flavor) or args.all:
                 flavor = inquirer.text(
-                    message=f"Enter flavor text for this image: {file_path}",
+                    message="Enter flavor text for this image:",
                     default=flavor,
                 ).execute()
 
             Photo = Query()
 
-            photos_table.upsert(
-                {
-                    "path": file_path,
-                    "rotation": rotation_angle,
-                    "quality": quality,
-                    "description": description,
-                    "flavor": flavor,
-                    "brightness": brightness,
-                    "contrast": contrast,
-                    "saturation": color,
-                    "sharpness": sharpness,
-                },
-                Photo.path == file_path,
-            )
+            if need_to_convert_path:
+                photos_table.update(
+                    {
+                        "path": relative_path,
+                        "rotation": rotation_angle,
+                        "quality": quality,
+                        "description": description,
+                        "flavor": flavor,
+                        "brightness": brightness,
+                        "contrast": contrast,
+                        "saturation": color,
+                        "sharpness": sharpness,
+                    },
+                    Photo.path == file_path,
+                )
+            else:
+                photos_table.upsert(
+                    {
+                        "path": relative_path,
+                        "rotation": rotation_angle,
+                        "quality": quality,
+                        "description": description,
+                        "flavor": flavor,
+                        "brightness": brightness,
+                        "contrast": contrast,
+                        "saturation": color,
+                        "sharpness": sharpness,
+                    },
+                    Photo.path == relative_path,
+                )
 
             try:
                 exif_tags = extract_exif_info(file_path)
@@ -755,9 +828,9 @@ def main(args):
             if event_same:
                 Event = Query()
                 event = event_table.get(Event.event == event_name)
-                if file_path not in event.get("photos", []):
+                if relative_path not in event.get("photos", []):
                     event_table.update(
-                        {"photos": event.get("photos", []) + [file_path]},
+                        {"photos": event.get("photos", []) + [relative_path]},
                         Event.event == event_name,
                     )
                 else:
@@ -770,9 +843,11 @@ def main(args):
                         "longitude": lon,
                         "location": location_name,
                         "date": date_object.timestamp(),
-                        "photos": [file_path],
+                        "photos": [relative_path],
                     }
                 )
+
+        make_json_readable(f"{project_path}/db/{args.project}.json")        
 
 
 def parse_args():
@@ -787,6 +862,7 @@ def parse_args():
         action="store_true",
         help="Ask for event names (default is to name events automatically by date and location)",
     )
+
     parser.add_argument(
         "--link",
         "-l",
@@ -798,20 +874,6 @@ def parse_args():
         "-v",
         action="store_true",
         help="View the image while processing",
-    )
-
-    parser.add_argument(
-        "--flavor",
-        "-f",
-        action="store_true",
-        help="Ask to store flavor text (default is use event name and date)",
-    )
-
-    parser.add_argument(
-        "--description",
-        "-d",
-        action="store_true",
-        help="Ask to store a description of the photo for visually impaired users (default is use flavor text)",
     )
 
     parser.add_argument(

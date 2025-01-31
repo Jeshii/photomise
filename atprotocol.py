@@ -62,7 +62,7 @@ def main(args):
     logger = logging.getLogger(__name__)
 
     # Project initialization
-    projects_db, _ = base.set_project(logger, config, args)
+    projects_db, main_path, settings = base.set_project(logger, config, args)
     event_table = base.get_events_table(projects_db)
     posts_table = base.get_posts_table(projects_db)
     photos_table = base.get_photos_table(projects_db)
@@ -109,9 +109,13 @@ def main(args):
     image_alts = []
     images = []
     image_aspect_ratios = []
+    logging.debug(f"Checking for photos in: {events[event_name]}")
     for path in events[event_name]["photos"]:
-        if os.path.exists(path):
-            height, width = base.get_image_aspect_ratio(path)
+        full_path = base.convert_to_absolute_path(path, main_path)
+        if os.path.exists(full_path):
+            logging.debug(f"Processing {full_path}")
+            height, width = base.get_image_aspect_ratio(full_path)
+            logging.debug(f"Height: {height}, Width: {width}")
             if not height or not width:
                 height = 1
                 width = 1
@@ -124,17 +128,19 @@ def main(args):
                 rotation_angle = photo_entry.get("rotation", 0)
                 quality = photo_entry.get("quality", 80)
                 description = photo_entry.get("description", "")
+                max_dimension = photo_entry.get("max_dimension", settings.get("max_dimension", 1200))
             else:
                 rotation_angle = 0
-                quality = 80
+                quality = settings.get("quality", settings.get("quality", 80))
                 description = ""
-
+                max_dimension = settings.get("max_dimension", 1200)
             try:
                 compressed_image = base.compress_image(
-                    path,
+                    full_path,
                     rotation_angle=rotation_angle,
                     quality=quality,
                     show=args.view,
+                    max_dimension=max_dimension,
                 )
 
                 images.append(compressed_image)
@@ -143,31 +149,36 @@ def main(args):
             except Exception as e:
                 logging.fatal(f"Error compressing image: {e}")
                 return
-
-    try:
-        response = client.send_images(
-            text=args.text,
-            images=images,
-            image_alts=image_alts,
-            image_aspect_ratios=image_aspect_ratios,
-        )
-    except Exception as e:
-        logging.fatal(f"Upload failed: {e}")
-        return
-
-    if response:
+    
+    if images:
         try:
-            logging.debug(f"Response: {response}")
-            post_uri = response.uri if hasattr(response, "uri") else None
-            post_uri_parts = post_uri.split("/")
-            post_url = f"https://bsky.app/profile/{args.user}/post/{post_uri_parts[-1]}"
-            base.update_event_posted(
-                posts_table, event_name, args.user, "Bluesky", post_uri, post_url
+            response = client.send_images(
+                text=args.text,
+                images=images,
+                image_alts=image_alts,
+                image_aspect_ratios=image_aspect_ratios,
             )
         except Exception as e:
-            logging.error(f"Error adding post to database: {e}")
+            logging.fatal(f"Upload failed: {e}")
+            return
+
+        if response:
+            try:
+                logging.debug(f"Response: {response}")
+                post_uri = response.uri if hasattr(response, "uri") else None
+                post_uri_parts = post_uri.split("/")
+                post_url = f"https://bsky.app/profile/{args.user}/post/{post_uri_parts[-1]}"
+                base.update_event_posted(
+                    posts_table, event_name, args.user, "Bluesky", post_uri, post_url
+                )
+            except Exception as e:
+                logging.error(f"Error adding post to database: {e}")
+        else:
+            logging.error("No response from server")
     else:
-        logging.error("No response from server")
+        logging.error("No images to upload")
+    
+    base.make_json_readable(f"{main_path}/db/{args.project}.json")
 
 
 def parse_args():
