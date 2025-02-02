@@ -333,22 +333,41 @@ def set_project(
             except IOError as e:
                 logging.exception(f"Error writing to config file: {e}")
 
-    while not args.project or args.project == "Settings":
-        project_choices = {"Settings": "Settings"}
+    while not args.project or args.project not in projects:
+        global_db = get_global_db()
+        project_choices = {"Filters":"filters","Locations":"locations","Exit":"exit"}
         for name, path in projects.items():
             project_choices[f"{name} ({path})"] = name
-        project_choice = inquirer.select(
+        project_select = inquirer.select(
             message="Select a project", choices=project_choices.keys()
         ).execute()
-        args.project = project_choices[project_choice]
-        if args.project == "Settings":
-            settings = set_global_settings()
+        args.project = project_choices[project_select]
+        if args.project not in projects.keys():
             while True:
-                if not inquirer.confirm("Make a filter?").execute():
+                if args.project == "exit":
+                    make_json_readable("global.json")
+                    return
+                table = global_db.table(args.project)
+                items = get_items(table)
+                items["Make New " + args.project.title()] = None
+                items["Exit"] = "exit"
+                
+                choice = inquirer.select(
+                    message=f"Select a {args.project[:-1]} to edit",
+                    choices=items.keys(),
+                ).execute()
+                
+                if items.get(choice) == "exit":
                     break
-                updated = make_filter()
+                    
+                if args.project == "filters":
+                    updated = upsert_filter(items.get(choice))
+                else:
+                    updated = upsert_global(args.project,items.get(choice))
+                
                 if updated:
-                    logger.info(f"""Filter "{updated}" settings saved.""")
+                    logger.info(f"""{args.project.title()} "{updated}" settings saved.""")
+                    break
 
     main_path = projects[args.project]
     db_path = f"{projects[args.project]}/db/"
@@ -386,13 +405,25 @@ def make_json_readable(json_file_path: str) -> str:
         json.dump(data, file, indent=4, ensure_ascii=False)
 
 
-def make_filter():
-    filter_name = inquirer.text("Enter a name for this filter").execute()
+def get_items(table: TinyDB.table) -> dict:
+    """Get all named items from a table and return as a dictionary."""
+    items = {}
+    for item in table.all():
+        name = item.get("name")
+        if name:
+            items[name] = name
+    return items
+
+def upsert_filter(filter_name: str = None) -> str:
+    if not filter_name:
+        filter_name = inquirer.text("Enter a name for this filter").execute()
     global_db = get_global_db()
     filter_table = global_db.table("filters")
     Filter = Query()
     filter = filter_table.search(Filter.name == filter_name)
     logging.debug(f"Filter: {filter}")
+    if not filter:
+        filter=[{'brightness':1.0,'contrast':1.0,'color':1.0,'sharpness':1.0}]
     brightness = make_min_max_prompt(
         "Adjust brightness",
         filter[0].get("brightness", 1.0),
@@ -416,18 +447,61 @@ def make_filter():
         return filter_name
     else:
         return False
-
-
-def set_global_settings() -> None:
-    settings = {}
+    
+def upsert_global(table_name: str, item_name: str = None) -> str:
+    """
+    General function to upsert items in global tables.
+    Args:
+        table_name: Name of the table to upsert into
+        item_name: Name of item to edit (if None, will prompt for new name)
+    Returns:
+        str: Name of updated/inserted item, or False if failed
+    """
+    if not item_name:
+        item_name = inquirer.text(f"Enter a name for this {table_name[:-1]}").execute()
+    
     global_db = get_global_db()
-    settings_table = global_db.table("settings")
-    settings_doc = settings_table.get(doc_id=1)
-    for setting in settings_table.all():
-        settings["max_dimension"] = setting.get("max_dimension")
-        settings["quality"] = setting.get("quality")
-        settings["description"] = setting.get("description")
-        settings["flavor"] = setting.get("flavor")
+    table = global_db.table(table_name)
+    Query_item = Query()
+    item = table.search(Query_item.name == item_name)
+    logging.debug(f"Item: {item}")
+
+    # Get all fields except 'name' from first record
+    fields = {}
+    if item:
+        fields = {k: v for k, v in item[0].items() if k != 'name'}
+    else:
+        fields = table.all()[0]
+    
+    if not fields:
+        raise ValueError(f"No fields found in {table_name} table, please run photomise process first.")
+
+    # Build updated fields dictionary
+    updated_fields = {'name': item_name}
+    for field_name, default_value in fields.items():
+        value = inquirer.text(
+            f"Enter the {field_name} for this {table_name[:-1]}",
+            default=str(default_value)
+        ).execute()
+        updated_fields[field_name] = float(value)
+
+    updated = table.upsert(
+        updated_fields,
+        Query_item.name == item_name
+    )
+
+    return item_name if updated else False
+
+
+def set_project_settings(project_db: TinyDB) -> None:
+    settings = {}
+    settings_table = project_db.table("settings")
+    setting_doc = settings_table.get(doc_id=1)
+    
+    settings["max_dimension"] = setting_doc.get("max_dimension")
+    settings["quality"] = setting_doc.get("quality")
+    settings["description"] = setting_doc.get("description")
+    settings["flavor"] = setting_doc.get("flavor")
 
     settings["max_dimension"] = inquirer.text(
         message="Set maximum dimension for images",
@@ -447,13 +521,13 @@ def set_global_settings() -> None:
     ).execute()
 
     updated = settings_table.upsert(
-        settings_doc,
         {
             "max_dimension": settings.get("max_dimension"),
             "quality": settings.get("quality"),
             "description": settings.get("description"),
             "flavor": settings.get("flavor"),
         },
+        document=setting_doc,
     )
     logging.debug(f"Updated: {updated}")
     return settings
@@ -860,6 +934,7 @@ def main(args):
                 )
 
         make_json_readable(f"{project_path}/db/{args.project}.json")
+        make_json_readable("global.json")
 
 
 def parse_args():
