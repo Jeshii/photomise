@@ -4,7 +4,6 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-argparse = "*"
 pendulum = "*"
 geopy = "*"
 rich = "*"
@@ -14,8 +13,13 @@ piexif = "*"
 configparser = "*"
 pillow = "*"
 tinydb = "*"
+typer = "*"
+photomise = {file = ".", editable = true}
 
 [dev-packages]
+pytest = "*"
+black = "*"
+isort = "*"
 
 [requires]
 python_version = "3.12"
