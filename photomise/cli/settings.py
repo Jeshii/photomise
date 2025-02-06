@@ -1,14 +1,18 @@
-from cli import settings_app
 from InquirerPy import inquirer
-from settings import filters, locations
+from typer import Typer
 
-from ...database.shared import SharedDB
-from ...utilities.logging import setup_logging
+from ..database.shared import SharedDB
+from ..utilities.logging import setup_logging
+from . import filters, locations
+
+app = Typer()
+app.add_typer(filters.app, name="filters", help="Filter settings")
+app.add_typer(locations.app, name="locations", help="Location settings")
 
 logging, console = setup_logging()
 
 
-@settings_app.command()
+@app.command()
 def interactive():
     """Edit global settings via an interactive menu."""
     gdb = SharedDB()

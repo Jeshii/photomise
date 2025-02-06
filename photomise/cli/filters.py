@@ -1,15 +1,15 @@
 import InquirerPy as inquirer
-from ..settings import filters_app
-from typer import Argument, Option
+from typer import Argument, Option, Typer
 
-from ...database.shared import SharedDB
-from ...utilities.logging import setup_logging
-from ...utilities.shared import make_min_max_prompt, min_max_check
+from ..database.shared import SharedDB
+from ..utilities.logging import setup_logging
+from ..utilities.shared import make_min_max_prompt, min_max_check
 
 logging, console = setup_logging()
+app = Typer()
 
 
-@filters_app.command()
+@app.command()
 def edit(
     filter_name: str = Argument(..., help="Filter name"),
     brightness: float = Option(None, "--brightness", "-b", help="Brightness"),
@@ -56,7 +56,7 @@ def edit(
     return updated
 
 
-@filters_app.command()
+@app.command()
 def delete(
     filter_name: str = Argument(None, help="Filter name"),
     select: bool = Option(False, "--select", "-s", help="Select filter to delete"),
@@ -71,7 +71,7 @@ def delete(
     return
 
 
-@filters_app.command()
+@app.command()
 def list():
     """List all filters."""
     gdb = SharedDB()

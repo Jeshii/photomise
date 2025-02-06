@@ -9,8 +9,11 @@ photomise.egg-info/entry_points.txt
 photomise.egg-info/top_level.txt
 photomise/cli/__init__.py
 photomise/cli/main.py
+photomise/cli/database/__init__.py
 photomise/cli/post/__init__.py
 photomise/cli/post/atprotocol.py
+photomise/cli/process/__init__.py
+photomise/cli/process/photos.py
 photomise/cli/settings/__init__.py
 photomise/cli/settings/filters.py
 photomise/cli/settings/interactive.py

@@ -1,14 +1,14 @@
 import InquirerPy as inquirer
-from settings import locations_app
-from typer import Argument, Option
+from typer import Argument, Option, Typer
 
-from ...database.shared import SharedDB
-from ...utilities.logging import setup_logging
+from ..database.shared import SharedDB
+from ..utilities.logging import setup_logging
 
+app = Typer()
 logging, console = setup_logging()
 
 
-@locations_app.command()
+@app.command()
 def edit(
     location_name: str = Argument(..., help="Location name"),
     latitude: float = Option(None, "--latitude", "-lat", help="Latitude"),

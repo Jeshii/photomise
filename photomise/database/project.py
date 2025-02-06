@@ -2,10 +2,11 @@ from pathlib import Path
 
 import pendulum
 
-from .base import DatabaseManager
 from ..utilities.logging import setup_logging
+from .base import DatabaseManager
 
 logging, console = setup_logging()
+
 
 class ProjectDB(DatabaseManager):
     def __init__(self, project_name: str, project_path: Path):
@@ -45,7 +46,7 @@ class ProjectDB(DatabaseManager):
             if event["event"] not in posted_events:
                 events[event["event"]] = event
         return events
-    
+
     def get_event(self, event_name: str):
         logging.info(f"[{self.name}] Getting event: {event_name}")
         return self._events.get(self._query.event == event_name)

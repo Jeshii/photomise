@@ -1,20 +1,22 @@
 import os
 
 import pendulum
+import typer
 from atproto import Client, models
-from cli import post_app
 from InquirerPy import inquirer
 from typer import Argument, Option
 
-from ...utilities.exif import compress_image, get_image_aspect_ratio
-from ...utilities.logging import setup_logging
-from ...utilities.post import get_bluesky_user, get_password_from_keyring
-from ...utilities.project import convert_to_absolute_path, set_project, sanitize_text
+from ..utilities.exif import compress_image, get_image_aspect_ratio
+from ..utilities.logging import setup_logging
+from ..utilities.post import get_bluesky_user, get_password_from_keyring
+from ..utilities.project import convert_to_absolute_path, sanitize_text, set_project
+
+app = typer.Typer()
 
 logging, console = setup_logging()
 
 
-@post_app.command(name="atprotocol")
+@app.command()
 def atprotocol(
     project: str = Argument(..., help="Project name"),
     user: str = Option(None, "--user", "-u", help="Bluesky username"),

@@ -2,6 +2,7 @@ import configparser
 import os
 from urllib.parse import quote
 
+import pendulum
 from InquirerPy import inquirer
 
 from ..database.project import ProjectDB
@@ -9,7 +10,7 @@ from .constants import CONFIG_FILE
 from .logging import setup_logging
 
 config = configparser.ConfigParser()
-logging = setup_logging()
+logging, console = setup_logging()
 
 
 def convert_to_relative_path(file_path: str, project_path: str) -> str:
@@ -106,3 +107,33 @@ def set_project_settings(pdb: ProjectDB) -> None:
     )
     logging.debug(f"Updated: {updated}")
     return settings
+
+
+def get_non_hidden_files(directory: str):
+    found_non_hidden_files = False
+    for dirpath, _, filenames in os.walk(directory):
+        for filename in filenames:
+            if not filename.startswith(".") and not filename.startswith("~"):
+                found_non_hidden_files = True
+                yield dirpath, filename
+    if not found_non_hidden_files:
+        yield None, None
+
+
+def handle_duplicate_events(pdb: ProjectDB, events: list, photo_path: str) -> None:
+    """Handle events that contain the same photo."""
+
+    console.print(
+        f"\n[yellow]Warning:[/yellow] Photo {photo_path} appears in multiple events:"
+    )
+    for idx, event in enumerate(events, 1):
+        console.print(
+            f"{idx}. {event['event']} ({pendulum.from_timestamp(event['date']).format('YYYY-MM-DD')})"
+        )
+
+    keep_idx = inquirer.select(
+        message="Which event should keep this photo?",
+        choices=[str(i) for i in range(1, len(events) + 1)],
+    ).execute()
+
+    pdb.remove_photo_from_event(events, photo_path, keep_idx)
