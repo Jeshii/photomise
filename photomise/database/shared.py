@@ -1,6 +1,6 @@
-from photomise.database.base import DatabaseManager
 from geopy.distance import great_circle
 
+from photomise.database.base import DatabaseManager
 from photomise.utilities.constants import SHARED_DB_PATH
 
 

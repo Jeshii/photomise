@@ -4,10 +4,10 @@ from urllib.parse import quote
 
 import pendulum
 from InquirerPy import inquirer
-from photomise.utilities.constants import CONFIG_FILE
-from photomise.utilities.logging import setup_logging
 
 from photomise.database.project import ProjectDB
+from photomise.utilities.constants import CONFIG_FILE
+from photomise.utilities.logging import setup_logging
 
 config = configparser.ConfigParser()
 logging, console = setup_logging()
