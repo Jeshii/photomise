@@ -2,9 +2,9 @@ import getpass
 
 import keyring
 from InquirerPy import inquirer
+from utilities import constants
 
-from ..database.project import ProjectDB
-from . import constants
+from photomise.database.project import ProjectDB
 
 
 def get_bluesky_user(pdb: ProjectDB) -> str:

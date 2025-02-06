@@ -1,7 +1,7 @@
+from database.base import DatabaseManager
 from geopy.distance import great_circle
 
-from ..utilities.constants import SHARED_DB_PATH
-from .base import DatabaseManager
+from photomise.utilities.constants import SHARED_DB_PATH
 
 
 class SharedDB(DatabaseManager):

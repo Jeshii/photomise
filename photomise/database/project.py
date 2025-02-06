@@ -1,9 +1,9 @@
 from pathlib import Path
 
 import pendulum
+from database.base import DatabaseManager
 
-from ..utilities.logging import setup_logging
-from .base import DatabaseManager
+from photomise.utilities.logging import setup_logging
 
 logging, console = setup_logging()
 

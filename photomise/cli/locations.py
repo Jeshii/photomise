@@ -1,8 +1,8 @@
 import InquirerPy as inquirer
 from typer import Argument, Option, Typer
 
-from ..database.shared import SharedDB
-from ..utilities.logging import setup_logging
+from photomise.database.shared import SharedDB
+from photomise.utilities.logging import setup_logging
 
 app = Typer()
 logging, console = setup_logging()

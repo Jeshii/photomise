@@ -7,10 +7,10 @@ import os
 from InquirerPy import inquirer
 from typer import Argument, Option, Typer
 
-from ..utilities.constants import CONFIG_FILE
-from ..utilities.logging import setup_logging
-from ..utilities.project import fix_dir, get_project_db, sanitize_text
-from . import database, post, process, settings
+from photomise import database, post, process, settings
+from photomise.utilities.constants import CONFIG_FILE
+from photomise.utilities.logging import setup_logging
+from photomise.utilities.project import fix_dir, get_project_db, sanitize_text
 
 app = Typer(help="Photomise - Photo processing for social media posting")
 app.add_typer(settings.app, name="settings", help="Change global settings.")

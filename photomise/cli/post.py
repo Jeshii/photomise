@@ -5,10 +5,14 @@ from atproto import Client, models
 from InquirerPy import inquirer
 from typer import Argument, Exit, Option, Typer
 
-from ..utilities.exif import compress_image, get_image_aspect_ratio
-from ..utilities.logging import setup_logging
-from ..utilities.post import get_bluesky_user, get_password_from_keyring
-from ..utilities.project import convert_to_absolute_path, sanitize_text, set_project
+from photomise.utilities.exif import compress_image, get_image_aspect_ratio
+from photomise.utilities.logging import setup_logging
+from photomise.utilities.post import get_bluesky_user, get_password_from_keyring
+from photomise.utilities.project import (
+    convert_to_absolute_path,
+    sanitize_text,
+    set_project,
+)
 
 app = Typer()
 

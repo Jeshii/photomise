@@ -4,10 +4,10 @@ from urllib.parse import quote
 
 import pendulum
 from InquirerPy import inquirer
+from utilities.constants import CONFIG_FILE
+from utilities.logging import setup_logging
 
-from ..database.project import ProjectDB
-from .constants import CONFIG_FILE
-from .logging import setup_logging
+from photomise.database.project import ProjectDB
 
 config = configparser.ConfigParser()
 logging, console = setup_logging()
@@ -37,7 +37,7 @@ def item_duplicate(pdb, gdb, date_object, lat, lon):
 
 
 def fix_dir(current):
-    return current.replace("\\", "").strip()
+    return os.path.normpath(current).strip()
 
 
 def set_project(
@@ -60,7 +60,13 @@ def set_project(
         logging.fatal("No projects found in config.ini - please run photomise init.")
         exit(1)
 
-    main_path = projects[sanitize_text(project.lower())]
+    sanitized_project_name = sanitize_text(project.lower())
+    if sanitized_project_name not in projects:
+        logging.fatal(
+            f"Project '{project}' not found in config.ini - please run photomise init."
+        )
+        exit(1)
+    main_path = projects[sanitized_project_name]
     pdb = get_project_db(project, main_path)
 
     return pdb, main_path
@@ -111,17 +117,32 @@ def set_project_settings(pdb: ProjectDB) -> None:
 
 def get_non_hidden_files(directory: str):
     found_non_hidden_files = False
-    for dirpath, _, filenames in os.walk(directory):
-        for filename in filenames:
-            if not filename.startswith(".") and not filename.startswith("~"):
-                found_non_hidden_files = True
-                yield dirpath, filename
+    for entry in os.scandir(directory):
+        if (
+            entry.is_file()
+            and not entry.name.startswith(".")
+            and not entry.name.startswith("~")
+        ):
+            found_non_hidden_files = True
+            yield directory, entry.name
+        elif entry.is_dir():
+            yield from get_non_hidden_files(entry.path)
     if not found_non_hidden_files:
         yield None, None
 
 
 def handle_duplicate_events(pdb: ProjectDB, events: list, photo_path: str) -> None:
-    """Handle events that contain the same photo."""
+    """
+    Handle events that contain the same photo.
+
+    Args:
+        pdb (ProjectDB): The project database instance.
+        events (list): A list of events containing the photo.
+        photo_path (str): The path to the photo that appears in multiple events.
+
+    Returns:
+        None
+    """
 
     console.print(
         f"\n[yellow]Warning:[/yellow] Photo {photo_path} appears in multiple events:"
@@ -136,4 +157,13 @@ def handle_duplicate_events(pdb: ProjectDB, events: list, photo_path: str) -> No
         choices=[str(i) for i in range(1, len(events) + 1)],
     ).execute()
 
-    pdb.remove_photo_from_event(events, photo_path, keep_idx)
+    if (
+        keep_idx is None
+        or not keep_idx.isdigit()
+        or int(keep_idx) < 1
+        or int(keep_idx) > len(events)
+    ):
+        logging.error("Invalid selection. No event will be updated.")
+        return
+
+    pdb.remove_photo_from_event(events, photo_path, int(keep_idx))

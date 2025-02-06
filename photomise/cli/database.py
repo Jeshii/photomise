@@ -1,7 +1,7 @@
 from typer import Option, Typer
 
-from ..database.shared import SharedDB
-from ..utilities.project import set_project
+from photomise.database.shared import SharedDB
+from photomise.utilities.project import set_project
 
 app = Typer()
 

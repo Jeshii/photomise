@@ -1,9 +1,9 @@
 from InquirerPy import inquirer
 from typer import Typer
 
-from ..database.shared import SharedDB
-from ..utilities.logging import setup_logging
-from . import filters, locations
+from photomise import filters, locations
+from photomise.database.shared import SharedDB
+from photomise.utilities.logging import setup_logging
 
 app = Typer()
 app.add_typer(filters.app, name="filters", help="Filter settings")

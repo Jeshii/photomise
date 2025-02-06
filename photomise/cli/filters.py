@@ -1,9 +1,9 @@
 import InquirerPy as inquirer
 from typer import Argument, Option, Typer
 
-from ..database.shared import SharedDB
-from ..utilities.logging import setup_logging
-from ..utilities.shared import make_min_max_prompt, min_max_check
+from photomise.database.shared import SharedDB
+from photomise.utilities.logging import setup_logging
+from photomise.utilities.shared import make_min_max_prompt, min_max_check
 
 logging, console = setup_logging()
 app = Typer()
