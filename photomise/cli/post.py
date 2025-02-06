@@ -1,17 +1,16 @@
 import os
 
 import pendulum
-import typer
 from atproto import Client, models
 from InquirerPy import inquirer
-from typer import Argument, Option
+from typer import Argument, Exit, Option, Typer
 
 from ..utilities.exif import compress_image, get_image_aspect_ratio
 from ..utilities.logging import setup_logging
 from ..utilities.post import get_bluesky_user, get_password_from_keyring
 from ..utilities.project import convert_to_absolute_path, sanitize_text, set_project
 
-app = typer.Typer()
+app = Typer()
 
 logging, console = setup_logging()
 
@@ -24,18 +23,10 @@ def atprotocol(
     random: bool = Option(False, "--random", "-r", help="Choose a random event"),
     view: bool = Option(False, "--view", "-v", help="View images before posting"),
     text: str = Option(None, "--text", "-t", help="Text to post with images"),
+    dryrun: bool = Option(False, "--dryrun", "-d", help="Dry run (no post)"),
 ):
     """
     Post photos to Bluesky using the atprotocol API.
-
-    Parameters:
-    project (str): Project name.
-    log (str): Logging level.
-    user (str): Bluesky username.
-    allow (bool): Allow previously posted events.
-    random (bool): Choose a random event.
-    view (bool): View images before posting.
-    text (str): Text to post with images.
     """
 
     # Project initialization
@@ -50,7 +41,7 @@ def atprotocol(
     events = pdb.get_events_without_bluesky_posted()
     logging.debug(f"Bluesky events not previously posted: {events}")
     if allow or not events:
-        events = pdb.get_all_events()
+        events = pdb.get_events()
 
     if not events:
         logging.fatal("No events found. Please run photomise first.")
@@ -78,8 +69,23 @@ def atprotocol(
     images = []
     flavors = []
     image_aspect_ratios = []
+    photo_list = []
     logging.debug(f"Checking for photos in: {events[event_name]}")
-    for path in events[event_name]["photos"]:
+    if len(events[event_name]["photos"]) > 4:
+        ranking = pdb.get_rankings_by_event(event_name)
+        if not ranking:
+            logging.fatal("Too many photos to post to Bluesky")
+            Exit(1)
+        else:
+            logging.warning("Too many photos to post to Bluesky, only posting top 4")
+        for rank in ranking:
+            photo_list.append(rank["path"])
+            if len(photo_list) >= 4:
+                break
+    else:
+        photo_list = events[event_name]["photos"]
+
+    for path in photo_list:
         full_path = convert_to_absolute_path(path, main_path)
         if os.path.exists(full_path):
             logging.debug(f"Processing {full_path}")
@@ -96,7 +102,7 @@ def atprotocol(
             if photo_entry:
                 rotation_angle = photo_entry.get("rotation", 0)
                 quality = photo_entry.get("quality", pdb.settings.get("quality", 80))
-                description = photo_entry.get("description", "")
+                description = photo_entry.get("description", f"{event_name}-{path}")
                 flavor = photo_entry.get("flavor", "")
                 max_dimension = photo_entry.get(
                     "max_dimension", pdb.settings.get("max_dimension", 1200)
@@ -123,16 +129,20 @@ def atprotocol(
                 return
 
     if not text:
-        text = f"{events[event_name]['location']} ({pendulum.from_timestamp(events[event_name]['date']).format('YYYY-MMM-DD')}){'\n\n'.join(flavors)}"
+        flavor_text = "\n\n".join(filter(None, flavors))
+        text = f"{events[event_name]['location']} ({pendulum.from_timestamp(events[event_name]['date']).format('YYYY-MMM-DD')})"
+        if flavor_text:
+            text = f"{text}\n\n{flavor_text}"
 
     if images:
         try:
-            response = client.send_images(
-                text=text,
-                images=images,
-                image_alts=image_alts,
-                image_aspect_ratios=image_aspect_ratios,
-            )
+            if not dryrun:
+                response = client.send_images(
+                    text=text,
+                    images=images,
+                    image_alts=image_alts,
+                    image_aspect_ratios=image_aspect_ratios,
+                )
         except Exception as e:
             logging.fatal(f"Upload failed: {e}")
             return
@@ -141,12 +151,13 @@ def atprotocol(
             try:
                 logging.debug(f"Response: {response}")
 
-                pdb.set_post(
-                    event_name=event_name,
-                    user=sanitize_text(user),
-                    platform="Bluesky",
-                    uri=(response.uri if hasattr(response, "uri") else None),
-                )
+                if not dryrun:
+                    pdb.set_post(
+                        event_name=event_name,
+                        user=sanitize_text(user),
+                        platform="Bluesky",
+                        uri=(response.uri if hasattr(response, "uri") else None),
+                    )
             except Exception as e:
                 logging.error(f"Error adding post to database: {e}")
         else:

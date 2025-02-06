@@ -29,7 +29,7 @@ def convert_to_absolute_path(relative_path: str, project_path: str) -> str:
 
 
 def sanitize_text(text: str = "") -> str:
-    return quote(text.lower().strip().replace(" ", "_"))
+    return quote(text.strip().replace(" ", "_"))
 
 
 def item_duplicate(pdb, gdb, date_object, lat, lon):
@@ -60,7 +60,7 @@ def set_project(
         logging.fatal("No projects found in config.ini - please run photomise init.")
         exit(1)
 
-    main_path = projects[sanitize_text(project)]
+    main_path = projects[sanitize_text(project.lower())]
     pdb = get_project_db(project, main_path)
 
     return pdb, main_path

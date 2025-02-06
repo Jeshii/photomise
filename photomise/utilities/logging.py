@@ -18,6 +18,9 @@ def setup_logging():
     logger = logging.getLogger()
     logger.setLevel(logging.DEBUG)
 
+    # Remove existing handlers
+    logger.handlers.clear()
+
     # Rotating file handler (10MB max, keep 5 backup files)
     file_handler = RotatingFileHandler(
         app_log, maxBytes=10 * 1024 * 1024, backupCount=5  # 10MB

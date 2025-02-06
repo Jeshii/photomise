@@ -10,13 +10,18 @@ from typer import Argument, Option, Typer
 from ..utilities.constants import CONFIG_FILE
 from ..utilities.logging import setup_logging
 from ..utilities.project import fix_dir, get_project_db, sanitize_text
-from . import post, process, settings
+from . import database, post, process, settings
 
 app = Typer(help="Photomise - Photo processing for social media posting")
-app.add_typer(process.app, name="process", help="Process photos and videos.")
 app.add_typer(settings.app, name="settings", help="Change global settings.")
 app.add_typer(
     post.app, name="post", help="Post photos/videos to various social media platforms."
+)
+app.add_typer(database.app, name="database", help="Tools for the database.")
+app.add_typer(
+    process.app,
+    name="process",
+    help="Pre-process the photos in preparation for posting.",
 )
 
 # Basic initialization
@@ -80,7 +85,7 @@ def init(
         os.makedirs(f"{project_path}/db")
     if not os.path.exists(f"{project_path}/assets"):
         os.makedirs(f"{project_path}/assets")
-    project = sanitize_text(project)
+    project = sanitize_text(project.lower())
     projects[project] = project_path
     try:
         config["Projects"] = projects
@@ -109,9 +114,9 @@ def init(
 
 
 @app.callback()
-def callback():
+def main():
     """
-    Photomise - Photo processing for social media posting
+    Photomise - Photo processing for social media posting.
     """
 
 
