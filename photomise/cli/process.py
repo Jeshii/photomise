@@ -382,6 +382,8 @@ def rank(
     ),
     event_name: str = typer.Option(None, "--event", "-e", help="Event name"),
     all: bool = typer.Option(False, "--all", "-a", help="Rank all photos"),
+    greater_than: int = typer.Option(0, "--greater", "-g", help="Only rank events with more than this number of photos"),
+    unranked: bool = typer.Option(False, "--unranked", "-u", help="Rank only unranked photos"),
 ):
     """Rank files in order of preference for socials that only allow a certain number of attachments."""
 
@@ -408,7 +410,9 @@ def rank(
         except KeyError:
             logging.fatal("Event not found.")
             typer.Exit(1)
-        console.print(f"Please rank {len(photos)} photos in {event_name}.")
+        if len(photos) <= greater_than:
+            continue
+        console.print(f"There are {len(photos)} photos in {event_name}.")
         if view:
             for photo_path in photos:
                 photo = pdb.get_photo(photo_path)
@@ -425,6 +429,8 @@ def rank(
                 )
         for photo in photos:
             previous_rank = pdb.get_rank_by_photo(photo)
+            if unranked and previous_rank:
+                continue
             logging.debug(f"[{project}] Previous Rank for {photo}: {previous_rank}")
             rank = inquirer.text(
                 message=f"Enter a rank for this photo - {convert_to_absolute_path(photo, main_path)}:",
@@ -442,26 +448,26 @@ def rank(
             }
             pdb.upsert_rankings(ranking)
 
-    if inquirer.confirm(message="Would you like to review the rankings?").execute():
+        if inquirer.confirm(message="Would you like to review the rankings?").execute():
 
-        rankings = pdb.get_rankings_by_event(event_name)
-        logging.debug(f"[{project}] Rankings for {event_name}: {rankings}")
-        console.print(f"Rankings for {event_name}:")
-        for rank in rankings:
-            absolute_path_rank = convert_to_absolute_path(rank["path"], main_path)
-            console.print(f"\tRank {rank['rank']}: {absolute_path_rank}")
-            if view:
-                photo = pdb.get_photo(photo_path)
-                compress_image(
-                    image_path=absolute_path_rank,
-                    rotation_angle=photo["rotation"],
-                    quality=photo["quality"],
-                    brightness=photo["brightness"],
-                    contrast=photo["contrast"],
-                    color=photo["color"],
-                    sharpness=photo["sharpness"],
-                    show=True,
-                )
+            rankings = pdb.get_rankings_by_event(event_name)
+            logging.debug(f"[{project}] Rankings for {event_name}: {rankings}")
+            console.print(f"Rankings for {event_name}:")
+            for rank in rankings:
+                absolute_path_rank = convert_to_absolute_path(rank["path"], main_path)
+                console.print(f"\tRank {rank['rank']}: {absolute_path_rank}")
+                if view:
+                    photo = pdb.get_photo(photo_path)
+                    compress_image(
+                        image_path=absolute_path_rank,
+                        rotation_angle=photo["rotation"],
+                        quality=photo["quality"],
+                        brightness=photo["brightness"],
+                        contrast=photo["contrast"],
+                        color=photo["color"],
+                        sharpness=photo["sharpness"],
+                        show=True,
+                    )
     pdb.close()
 
 
