@@ -4,8 +4,8 @@ from urllib.parse import quote
 
 import pendulum
 from InquirerPy import inquirer
-from utilities.constants import CONFIG_FILE
-from utilities.logging import setup_logging
+from photomise.utilities.constants import CONFIG_FILE
+from photomise.utilities.logging import setup_logging
 
 from photomise.database.project import ProjectDB
 

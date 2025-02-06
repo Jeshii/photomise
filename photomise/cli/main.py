@@ -7,7 +7,7 @@ import os
 from InquirerPy import inquirer
 from typer import Argument, Option, Typer
 
-from photomise import database, post, process, settings
+from photomise.cli import database, post, process, settings
 from photomise.utilities.constants import CONFIG_FILE
 from photomise.utilities.logging import setup_logging
 from photomise.utilities.project import fix_dir, get_project_db, sanitize_text

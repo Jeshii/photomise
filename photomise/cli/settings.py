@@ -1,7 +1,7 @@
 from InquirerPy import inquirer
 from typer import Typer
 
-from photomise import filters, locations
+from photomise.cli import filters, locations
 from photomise.database.shared import SharedDB
 from photomise.utilities.logging import setup_logging
 
