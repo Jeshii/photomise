@@ -2,7 +2,7 @@ import getpass
 
 import keyring
 from InquirerPy import inquirer
-from utilities import constants
+from photomise.utilities import constants
 
 from photomise.database.project import ProjectDB
 

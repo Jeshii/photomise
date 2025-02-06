@@ -15,3 +15,15 @@ photomise/cli/main.py
 photomise/cli/post.py
 photomise/cli/process.py
 photomise/cli/settings.py
+photomise/database/__init__.py
+photomise/database/base.py
+photomise/database/project.py
+photomise/database/shared.py
+photomise/utilities/__init__.py
+photomise/utilities/atprotocol.py
+photomise/utilities/constants.py
+photomise/utilities/exif.py
+photomise/utilities/logging.py
+photomise/utilities/post.py
+photomise/utilities/project.py
+photomise/utilities/shared.py

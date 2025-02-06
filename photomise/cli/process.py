@@ -449,7 +449,7 @@ def rank(
         console.print(f"Rankings for {event_name}:")
         for rank in rankings:
             absolute_path_rank = convert_to_absolute_path(rank["path"], main_path)
-            console.print(f"\tRank {rank["rank"]}: {absolute_path_rank}")
+            console.print(f"\tRank {rank['rank']}: {absolute_path_rank}")
             if view:
                 photo = pdb.get_photo(photo_path)
                 compress_image(
