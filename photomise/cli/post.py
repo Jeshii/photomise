@@ -1,4 +1,5 @@
 import os
+import random as rand
 
 import pendulum
 from atproto import Client, models
@@ -56,7 +57,7 @@ def atprotocol(
             message="Choose an event to post", choices=events.keys()
         ).execute()
     else:
-        random_event = random.choice(list(events.values()))
+        random_event = rand.choice(list(events.values()))
         event_name = random_event["event"]
 
     password = get_password_from_keyring(logging, user)

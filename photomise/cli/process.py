@@ -382,8 +382,15 @@ def rank(
     ),
     event_name: str = typer.Option(None, "--event", "-e", help="Event name"),
     all: bool = typer.Option(False, "--all", "-a", help="Rank all photos"),
-    greater_than: int = typer.Option(0, "--greater", "-g", help="Only rank events with more than this number of photos"),
-    unranked: bool = typer.Option(False, "--unranked", "-u", help="Rank only unranked photos"),
+    greater_than: int = typer.Option(
+        0,
+        "--greater",
+        "-g",
+        help="Only rank events with more than this number of photos",
+    ),
+    unranked: bool = typer.Option(
+        False, "--unranked", "-u", help="Rank only unranked photos"
+    ),
 ):
     """Rank files in order of preference for socials that only allow a certain number of attachments."""
 
