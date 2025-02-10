@@ -1,13 +1,18 @@
+import configparser
 import os
+import plistlib
 import random as rand
+import sys
+from enum import Enum
 
 import pendulum
+import typer
 from atproto import Client, models
 from InquirerPy import inquirer
-from typer import Argument, Exit, Option, Typer
 
+from photomise.utilities import logging
+from photomise.utilities.constants import CONFIG_FILE
 from photomise.utilities.exif import compress_image, get_image_aspect_ratio
-from photomise.utilities.logging import setup_logging
 from photomise.utilities.post import get_bluesky_user, get_password_from_keyring
 from photomise.utilities.project import (
     convert_to_absolute_path,
@@ -15,20 +20,23 @@ from photomise.utilities.project import (
     set_project,
 )
 
-app = Typer()
+app = typer.Typer()
 
-logging, console = setup_logging()
+logger, console = logging.setup_logging()
+config = configparser.ConfigParser()
 
 
 @app.command()
 def atprotocol(
-    project: str = Argument(..., help="Project name"),
-    user: str = Option(None, "--user", "-u", help="Bluesky username"),
-    allow: bool = Option(False, "--allow", "-a", help="Allow previously posted events"),
-    random: bool = Option(False, "--random", "-r", help="Choose a random event"),
-    view: bool = Option(False, "--view", "-v", help="View images before posting"),
-    text: str = Option(None, "--text", "-t", help="Text to post with images"),
-    dryrun: bool = Option(False, "--dryrun", "-d", help="Dry run (no post)"),
+    project: str = typer.Argument(..., help="Project name"),
+    user: str = typer.Option(None, "--user", "-u", help="Bluesky username"),
+    allow: bool = typer.Option(
+        False, "--allow", "-a", help="Allow previously posted events"
+    ),
+    random: bool = typer.Option(False, "--random", "-r", help="Choose a random event"),
+    view: bool = typer.Option(False, "--view", "-v", help="View images before posting"),
+    text: str = typer.Option(None, "--text", "-t", help="Text to post with images"),
+    dryrun: bool = typer.Option(False, "--dryrun", "-d", help="Dry run (no post)"),
 ):
     """
     Post photos to Bluesky using the atprotocol API.
@@ -41,15 +49,15 @@ def atprotocol(
     # Check flags
     if not user:
         user = get_bluesky_user(pdb)
-        logging.debug(f"Bluesky user: {user}")
+        logger.debug(f"Bluesky user: {user}")
 
     events = pdb.get_events_without_bluesky_posted()
-    logging.debug(f"Bluesky events not previously posted: {events}")
+    logger.debug(f"Bluesky events not previously posted: {events}")
     if allow or not events:
         events = pdb.get_events()
 
     if not events:
-        logging.fatal("No events found. Please run photomise first.")
+        logger.fatal("No events found. Please run photomise first.")
         return
 
     if not random:
@@ -60,14 +68,14 @@ def atprotocol(
         random_event = rand.choice(list(events.values()))
         event_name = random_event["event"]
 
-    password = get_password_from_keyring(logging, user)
+    password = get_password_from_keyring(logger, user)
     try:
         client.login(user, password)
         if not client.me:
-            logging.fatal(f"Login failed: {client.error}")
+            logger.fatal(f"Login failed: {client.error}")
             return
     except Exception as e:
-        logging.fatal(f"Login failed: {e}")
+        logger.fatal(f"Login failed: {e}")
         return
 
     image_alts = []
@@ -75,14 +83,14 @@ def atprotocol(
     flavors = []
     image_aspect_ratios = []
     photo_list = []
-    logging.debug(f"Checking for photos in: {events[event_name]}")
+    logger.debug(f"Checking for photos in: {events[event_name]}")
     if len(events[event_name]["photos"]) > 4:
         ranking = pdb.get_rankings_by_event(event_name)
         if not ranking:
-            logging.fatal("Too many photos to post to Bluesky")
-            Exit(1)
+            logger.fatal("Too many photos to post to Bluesky")
+            typer.Exit(1)
         else:
-            logging.warning("Too many photos to post to Bluesky, only posting top 4")
+            logger.warning("Too many photos to post to Bluesky, only posting top 4")
         for rank in ranking:
             photo_list.append(rank["path"])
             if len(photo_list) >= 4:
@@ -93,9 +101,9 @@ def atprotocol(
     for path in photo_list:
         full_path = convert_to_absolute_path(path, main_path)
         if os.path.exists(full_path):
-            logging.debug(f"Processing {full_path}")
+            logger.debug(f"Processing {full_path}")
             height, width = get_image_aspect_ratio(full_path)
-            logging.debug(f"Height: {height}, Width: {width}")
+            logger.debug(f"Height: {height}, Width: {width}")
             if not height or not width:
                 height = 1
                 width = 1
@@ -130,7 +138,7 @@ def atprotocol(
                 image_alts.append(description)
                 flavors.append(flavor)
             except Exception as e:
-                logging.fatal(f"Error compressing image: {e}")
+                logger.fatal(f"Error compressing image: {e}")
                 return
 
     if not text:
@@ -149,12 +157,12 @@ def atprotocol(
                     image_aspect_ratios=image_aspect_ratios,
                 )
         except Exception as e:
-            logging.fatal(f"Upload failed: {e}")
+            logger.fatal(f"Upload failed: {e}")
             return
 
         if response:
             try:
-                logging.debug(f"Response: {response}")
+                logger.debug(f"Response: {response}")
 
                 if not dryrun:
                     pdb.set_post(
@@ -164,8 +172,72 @@ def atprotocol(
                         uri=(response.uri if hasattr(response, "uri") else None),
                     )
             except Exception as e:
-                logging.error(f"Error adding post to database: {e}")
+                logger.error(f"Error adding post to database: {e}")
         else:
-            logging.error("No response from server")
+            logger.error("No response from server")
     else:
-        logging.error("No images to upload")
+        logger.error("No images to upload")
+
+
+class SupportedProtocols(str, Enum):
+    atprotocol = "atprotocol"
+
+
+@app.command()
+def plist(
+    project: str = typer.Argument(..., help="Project name"),
+    output_path: str = typer.Option(..., "-o","--output", prompt="Output path"),
+    platform: SupportedProtocols = typer.Option(SupportedProtocols.atprotocol, "-p","--protocol",case_sensitive=False),
+    schedule: str = typer.Option("15 11,23", "-s","--schedule",help="Cron-lik schedule in mm hh format (e.g. '15 11,23')"),
+):
+    """Export project configuration to a plist file."""
+    if not os.path.exists(CONFIG_FILE):
+        logger.fatal("Config file not found.")
+        typer.Exit(1)
+
+    config.read(CONFIG_FILE)
+    if not config.has_section("Projects"):
+        logger.fatal("No projects found in config file.")
+        typer.Exit(1)
+
+    projects = dict(config.items("Projects"))
+    if project not in projects:
+        logger.fatal(f"Project {project} not found in config file.")
+        typer.Exit(1)
+
+    log_dir = logging.get_log_dir()
+    project_path = projects[project]
+    executable_path = sys.executable
+
+    # Parse cron string
+    try:
+        minute, hours, *_ = schedule.split()
+        calendar_intervals = []
+        for hour in hours.split(','):
+            calendar_intervals.append({
+                "Hour": int(hour),
+                "Minute": int(minute)
+            })
+    except ValueError as e:
+        logger.fatal(f"Invalid cron string format: {e}")
+        typer.Exit(1)
+
+    plist_data = {
+        "Label": f"click.blueribbon.{project}",
+        "ProgramArguments": [
+            "/bin/sh",
+            "-c",
+            f'{executable_path} photomise init {project} -p "{project_path}" && {executable_path} photomise post {platform} {project} -r',
+        ],
+        "StartCalendarInterval": calendar_intervals,
+        "StandardOutPath": f"{log_dir}/photomise.out",
+        "StandardErrorPath": f"{log_dir}/photomise.err",
+        "WorkingDirectory": project_path,
+    }
+
+    output_file_path = f"{output_path}/click.blueribbon.photomise.{project}.plist"
+
+    with open(output_file_path, "wb") as plist_file:
+        plistlib.dump(plist_data, plist_file)
+
+    logger.info(f"Plist file exported to {output_path}")

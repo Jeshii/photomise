@@ -4,15 +4,15 @@ import configparser
 import logging
 import os
 
+import typer
 from InquirerPy import inquirer
-from typer import Argument, Option, Typer
 
 from photomise.cli import database, post, process, settings
 from photomise.utilities.constants import CONFIG_FILE
 from photomise.utilities.logging import setup_logging
 from photomise.utilities.project import fix_dir, get_project_db, sanitize_text
 
-app = Typer(help="Photomise - Photo processing for social media posting")
+app = typer.Typer(help="Photomise - Photo processing for social media posting")
 app.add_typer(settings.app, name="settings", help="Change global settings.")
 app.add_typer(
     post.app, name="post", help="Post photos/videos to various social media platforms."
@@ -31,15 +31,15 @@ logger, console = setup_logging()
 
 @app.command()
 def init(
-    project: str = Argument(..., help="Project name"),
-    project_path: str = Option(None, "--path", "-p", help="Path to project"),
-    description: bool = Option(
+    project: str = typer.Argument(..., help="Project name"),
+    project_path: str = typer.Option(None, "--path", "-p", help="Path to project"),
+    description: bool = typer.Option(
         False,
         "--description",
         "-d",
         help="Provide descriptions for visually impaired users",
     ),
-    flavor: bool = Option(
+    flavor: bool = typer.Option(
         False, "--flavor", "-f", help="Provide flavor text for assets"
     ),
 ):

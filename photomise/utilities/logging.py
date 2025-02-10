@@ -5,11 +5,17 @@ from pathlib import Path
 from rich.console import Console
 
 
+def get_log_dir() -> Path:
+    """Get the log directory path"""
+    log_dir = Path.home() / ".photomise" / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    return log_dir
+
+
 def setup_logging():
     """Setup global logging configuration"""
     # Create logs directory
-    log_dir = Path.home() / ".photomise" / "logs"
-    log_dir.mkdir(parents=True, exist_ok=True)
+    log_dir = get_log_dir()
 
     # Global app log
     app_log = log_dir / "photomise.log"
