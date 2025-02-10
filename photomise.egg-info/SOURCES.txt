@@ -8,6 +8,7 @@ photomise.egg-info/dependency_links.txt
 photomise.egg-info/entry_points.txt
 photomise.egg-info/top_level.txt
 photomise/cli/__init__.py
+photomise/cli/__main__.py
 photomise/cli/database.py
 photomise/cli/filters.py
 photomise/cli/locations.py

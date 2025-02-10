@@ -222,12 +222,13 @@ def plist(
         logger.fatal(f"Invalid cron string format: {e}")
         typer.Exit(1)
 
+    script_dir = os.path.dirname(os.path.abspath(__file__))
     plist_data = {
-        "Label": f"click.blueribbon.{project}",
+        "Label": f"click.blueribbon.photomise.{project}",
         "ProgramArguments": [
             "/bin/sh",
             "-c",
-            f'{executable_path} photomise init {project} -p "{project_path}" && {executable_path} photomise post {platform} {project} -r',
+            f'{executable_path} "{script_dir}" init {project} -p "{project_path}" && {executable_path} "{script_dir}" post {platform} {project} -r',
         ],
         "StartCalendarInterval": calendar_intervals,
         "StandardOutPath": f"{log_dir}/photomise.out",
@@ -240,4 +241,4 @@ def plist(
     with open(output_file_path, "wb") as plist_file:
         plistlib.dump(plist_data, plist_file)
 
-    logger.info(f"Plist file exported to {output_path}")
+    console.print(f"Plist file exported to {output_path}. Run [bold]launchctl load {output_file_path}[/bold] to schedule the task.")
