@@ -185,28 +185,38 @@ class SupportedProtocols(str, Enum):
 
 @app.command()
 def plist(
-    project: str = typer.Argument(..., help="Project name"),
+    project: str = typer.Argument(..., help="Project name or path"),
     output_path: str = typer.Option(..., "-o","--output", prompt="Output path"),
     platform: SupportedProtocols = typer.Option(SupportedProtocols.atprotocol, "-p","--protocol",case_sensitive=False),
     schedule: str = typer.Option("15 11,23", "-s","--schedule",help="Cron-lik schedule in mm hh format (e.g. '15 11,23')"),
 ):
-    """Export project configuration to a plist file."""
-    if not os.path.exists(CONFIG_FILE):
+    """Export a plist file for use with launchd for scheduled posting."""
+    
+    # Some environments don't find the config.ini well, so we can use the project path instead
+    if os.path.exists(project):
+        project_path = project
+        project_db_path = f"{project_path}/db/"
+        # list files in project directory
+        files = os.listdir(project_db_path)
+        project = files[0].split(".")[0]
+    elif not os.path.exists(CONFIG_FILE):
         logger.fatal("Config file not found.")
         typer.Exit(1)
 
-    config.read(CONFIG_FILE)
-    if not config.has_section("Projects"):
-        logger.fatal("No projects found in config file.")
-        typer.Exit(1)
+        config.read(CONFIG_FILE)
+        if not config.has_section("Projects"):
+            logger.fatal("No projects found in config file.")
+            typer.Exit(1)
 
-    projects = dict(config.items("Projects"))
-    if project not in projects:
-        logger.fatal(f"Project {project} not found in config file.")
-        typer.Exit(1)
+        projects = dict(config.items("Projects"))
+        if project not in projects:
+            logger.fatal(f"Project {project} not found in config file.")
+            typer.Exit(1)
+        
+        project_path = projects[project]
 
     log_dir = logging.get_log_dir()
-    project_path = projects[project]
+    
     executable_path = sys.executable
 
     # Parse cron string
@@ -228,11 +238,11 @@ def plist(
         "ProgramArguments": [
             "/bin/sh",
             "-c",
-            f'{executable_path} "{script_dir}" init {project} -p "{project_path}" && {executable_path} "{script_dir}" post {platform} {project} -r',
+            f'"{executable_path}" "{script_dir}" post {platform.value} {project_path} -r' # "{executable_path}" "{script_dir}" init {project} -p "{project_path}" && 
         ],
         "StartCalendarInterval": calendar_intervals,
-        "StandardOutPath": f"{log_dir}/photomise.out",
-        "StandardErrorPath": f"{log_dir}/photomise.err",
+        "StandardOutPath": f"{log_dir}/photomise-{project}.out",
+        "StandardErrorPath": f"{log_dir}/photomise-{project}.err",
         "WorkingDirectory": project_path,
     }
 
