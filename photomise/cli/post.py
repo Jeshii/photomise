@@ -193,7 +193,7 @@ def plist(
     """Export a plist file for use with launchd for scheduled posting."""
     
     # Some environments don't find the config.ini well, so we can use the project path instead
-    if os.path.exists(project):
+    if os.path.exists(project) or os.path.isdir(project):
         project_path = project
         project_db_path = f"{project_path}/db/"
         # list files in project directory
