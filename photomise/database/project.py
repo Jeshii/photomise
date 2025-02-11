@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 
 import pendulum
 
@@ -9,7 +10,7 @@ logging, console = setup_logging()
 
 
 class ProjectDB(DatabaseManager):
-    def __init__(self, project_name: str, project_path: Path):
+    def __init__(self, project_name: str=None, project_path: Path=None):
         """
         Initialize the project database object.
 
@@ -17,9 +18,28 @@ class ProjectDB(DatabaseManager):
             project_name (str): Name of the project.
             project_path (Path): Path to the project.
         """
+        if not project_name and not project_path:
+            raise ValueError("Project name or path is required.")
+        if not project_name:
+            if os.path.exists(project_path):
+                files = os.listdir(f"{project_path}/db")
+                if len(files) == 1:
+                    project_name = files[0].split(".")[0]
+                else:
+                    raise ValueError("Project name is required.")
+            else:
+                raise ValueError("Project path does not exist.")
+        if not project_path:
+            try:
+                gdb = SharedDB()
+                projects = gdb.projects
+                project_path = projects[project_name]
+            except ValueError:
+                raise ValueError("Project path not found in global DB.")
         super().__init__(f"{project_path}/db/{project_name}.json")
-        self.name = project_name
-        self.path = f"{project_path}/db/{project_name}.json"
+        self.project_name = project_name
+        self.project_path = project_path
+        self.db_path = f"{project_path}/db/{project_name}.json"
         self._events = self.get_table("events")
         self._photos = self.get_table("photos")
         self._videos = self.get_table("videos")
@@ -84,7 +104,7 @@ class ProjectDB(DatabaseManager):
         Returns:
             dict: Event data.
         """
-        logging.info(f"[{self.name}] Getting event: {event_name}")
+        logging.info(f"[{self.project_name}] Getting event: {event_name}")
         return self._events.get(self._query.event == event_name)
 
     def get_events(self, event_names: list = None):
