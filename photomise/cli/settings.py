@@ -1,11 +1,11 @@
 from InquirerPy import inquirer
-from typer import Typer
+import typer
 
 from photomise.cli import filters, locations
 from photomise.database.shared import SharedDB
 from photomise.utilities.logging import setup_logging
 
-app = Typer()
+app = typer.Typer()
 app.add_typer(filters.app, name="filters", help="Filter settings")
 app.add_typer(locations.app, name="locations", help="Location settings")
 
@@ -15,7 +15,11 @@ logging, console = setup_logging()
 @app.command()
 def interactive():
     """Edit global settings via an interactive menu."""
-    gdb = SharedDB()
+    try:
+        gdb = SharedDB()
+    except Exception as e:
+        logging.fatal(f"Error: {e}")
+        typer.Exit(1)
     setting_choices = {
         "Filters": "filters",
         "Locations": "locations",

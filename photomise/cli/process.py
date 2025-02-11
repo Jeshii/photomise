@@ -210,7 +210,11 @@ def location(
     # Project initialization
     pdb, main_path = set_project(project)
     logging.debug(f"Project: {project}, Path: {main_path}, Settings: {pdb.settings}")
-    gdb = SharedDB()
+    try:
+        gdb = SharedDB()
+    except Exception as e:
+        logging.fatal(f"Error: {e}")
+        typer.Exit(1)
     photos_path = f"{main_path}/assets"
 
     non_hidden_files = list(get_non_hidden_files(photos_path))

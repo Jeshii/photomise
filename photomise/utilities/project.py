@@ -1,4 +1,3 @@
-import configparser
 import os
 from urllib.parse import quote
 
@@ -6,10 +5,10 @@ import pendulum
 from InquirerPy import inquirer
 
 from photomise.database.project import ProjectDB
-from photomise.utilities.constants import CONFIG_FILE
+from photomise.database.shared import SharedDB
 from photomise.utilities.logging import setup_logging
+import typer
 
-config = configparser.ConfigParser()
 logging, console = setup_logging()
 
 
@@ -43,31 +42,33 @@ def fix_dir(current):
 def set_project(
     project: str,
 ):
-    """Get project information from config.ini and return project database and path."""
-    if os.path.exists(CONFIG_FILE):
-        config.read(CONFIG_FILE)
+    """Get project information from global DB and return project database and path."""
 
-    if not config.has_section("Projects"):
-        config["Projects"] = {}
+    if os.path.exists(project):
+        pdb = ProjectDB(project_path=project)
+        main_path = project
+    else:
+        try:
+            gdb = SharedDB()
+        except Exception as e:
+            logging.fatal(f"Error: {e}")
+            typer.Exit(1)
 
-    config_dict = {
-        section: dict(config.items(section)) for section in config.sections()
-    }
+        projects = gdb.projects
 
-    projects = config_dict.get("Projects", {})
+        if not projects:
+            logging.fatal("No projects found in global database - please run photomise init.")
+            exit(1)
 
-    if not projects:
-        logging.fatal("No projects found in config.ini - please run photomise init.")
-        exit(1)
-
-    sanitized_project_name = sanitize_text(project.lower())
-    if sanitized_project_name not in projects:
-        logging.fatal(
-            f"Project '{project}' not found in config.ini - please run photomise init."
-        )
-        exit(1)
-    main_path = projects[sanitized_project_name]
-    pdb = get_project_db(project, main_path)
+        sanitized_project_name = sanitize_text(project.lower())
+        if sanitized_project_name not in projects:
+            logging.fatal(
+                f"Project '{project}' not found in global database - please run photomise init."
+            )
+            exit(1)
+        main_path = projects[sanitized_project_name]
+    
+        pdb = get_project_db(project, main_path)
 
     return pdb, main_path
 

@@ -1,4 +1,3 @@
-import configparser
 import os
 import plistlib
 import random as rand
@@ -11,7 +10,7 @@ from atproto import Client, models
 from InquirerPy import inquirer
 
 from photomise.utilities import logging
-from photomise.utilities.constants import CONFIG_FILE
+from photomise.database.shared import SharedDB
 from photomise.utilities.exif import compress_image, get_image_aspect_ratio
 from photomise.utilities.post import get_bluesky_user, get_password_from_keyring
 from photomise.utilities.project import (
@@ -23,7 +22,6 @@ from photomise.utilities.project import (
 app = typer.Typer()
 
 logger, console = logging.setup_logging()
-config = configparser.ConfigParser()
 
 
 @app.command()
@@ -188,32 +186,28 @@ def plist(
     project: str = typer.Argument(..., help="Project name or path"),
     output_path: str = typer.Option(..., "-o","--output", prompt="Output path"),
     platform: SupportedProtocols = typer.Option(SupportedProtocols.atprotocol, "-p","--protocol",case_sensitive=False),
-    schedule: str = typer.Option("15 11,23", "-s","--schedule",help="Cron-lik schedule in mm hh format (e.g. '15 11,23')"),
+    schedule: str = typer.Option(..., "-s","--schedule", prompt="Cron-like schedule in mm hh format (e.g. '15 11,23')"),
 ):
     """Export a plist file for use with launchd for scheduled posting."""
     
-    # Some environments don't find the config.ini well, so we can use the project path instead
-    if os.path.exists(project) or os.path.isdir(project):
-        project_path = project
-        project_db_path = f"{project_path}/db/"
-        # list files in project directory
-        files = os.listdir(project_db_path)
-        project = files[0].split(".")[0]
-    elif not os.path.exists(CONFIG_FILE):
-        logger.fatal("Config file not found.")
-        typer.Exit(1)
-
-        config.read(CONFIG_FILE)
-        if not config.has_section("Projects"):
-            logger.fatal("No projects found in config file.")
-            typer.Exit(1)
-
-        projects = dict(config.items("Projects"))
+    try:
+        gdb = SharedDB()
+        projects = gdb.projects
         if project not in projects:
-            logger.fatal(f"Project {project} not found in config file.")
+            logger.fatal(f"Project {project} not found in global database.")
             typer.Exit(1)
         
         project_path = projects[project]
+    except ValueError:
+        project_path = project
+        if os.path.exists(project_path):
+            logger.debug(f"Project path: {project_path}")
+        else:
+            logger.fatal(f"Project path {project_path} not found.")
+            typer.Exit(1)
+    except Exception as e:
+        logger.fatal(f"Error: {e}")
+        typer.Exit(1)
 
     log_dir = logging.get_log_dir()
     

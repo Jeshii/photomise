@@ -2,13 +2,25 @@ from geopy.distance import great_circle
 
 from photomise.database.base import DatabaseManager
 from photomise.utilities.constants import SHARED_DB_PATH
+from photomise.utilities.logging import setup_logging
 
+logger, console = setup_logging()
 
 class SharedDB(DatabaseManager):
     def __init__(self):
         super().__init__(SHARED_DB_PATH)
         self._locations = self.get_table("locations")
         self._filters = self.get_table("filters")
+
+    @property
+    def projects(self):
+        config = {}
+        for v in self.get_table("projects").all():
+            logger.debug(f"Project: {v}")
+            config[v["name"]] = v["path"]
+        if not config:
+            raise ValueError("No projects found in global database - please run photomise init.")
+        return config
 
     def get_items(self, table) -> dict:
         items = {}
@@ -30,6 +42,23 @@ class SharedDB(DatabaseManager):
             {
                 "name": params["name"],
                 "brightness": params["brightness"],
+                "contrast": params["contrast"],
+                "color": params["color"],
+                "sharpness": params["sharpness"],
+            },
+            self._query.name == params["name"],
+        )
+
+        if updated:
+            return params["name"]
+        else:
+            return False
+        
+    def upsert_project(self, params: dict) -> str:
+        updated = self._filters.upsert(
+            {
+                "name": params["name"],
+                "path": params["brightness"],
                 "contrast": params["contrast"],
                 "color": params["color"],
                 "sharpness": params["sharpness"],

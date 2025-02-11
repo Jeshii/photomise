@@ -17,7 +17,11 @@ def edit(
     list: bool = Option(False, "--list", "-l", help="List all locations"),
 ):
     """Edit location settings."""
-    gdb = SharedDB()
+    try:
+        gdb = SharedDB()
+    except Exception as e:
+        logging.fatal(f"Error: {e}")
+        return
     if rename:
         location_name = inquirer.text(
             "Enter a name for this location", default=location_name

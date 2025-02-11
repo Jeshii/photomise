@@ -1,26 +1,30 @@
 import InquirerPy as inquirer
-from typer import Argument, Option, Typer
+import typer
 
 from photomise.database.shared import SharedDB
 from photomise.utilities.logging import setup_logging
 from photomise.utilities.shared import make_min_max_prompt, min_max_check
 
 logging, console = setup_logging()
-app = Typer()
+app = typer.Typer()
 
 
 @app.command()
 def edit(
-    filter_name: str = Argument(..., help="Filter name"),
-    brightness: float = Option(None, "--brightness", "-b", help="Brightness"),
-    contrast: float = Option(None, "--contrast", "-con", help="Contrast"),
-    color: float = Option(None, "--color", "-col", help="Color"),
-    sharpness: float = Option(None, "--sharpness", "-s", help="Sharpness"),
-    rename: bool = Option(False, "--rename", "-r", help="Rename filter"),
-    delete: bool = Option(False, "--delete", "-d", help="Delete filter"),
+    filter_name: str = typer.Argument(..., help="Filter name"),
+    brightness: float = typer.Option(None, "--brightness", "-b", help="Brightness"),
+    contrast: float = typer.Option(None, "--contrast", "-con", help="Contrast"),
+    color: float = typer.Option(None, "--color", "-col", help="Color"),
+    sharpness: float = typer.Option(None, "--sharpness", "-s", help="Sharpness"),
+    rename: bool = typer.Option(False, "--rename", "-r", help="Rename filter"),
+    delete: bool = typer.Option(False, "--delete", "-d", help="Delete filter"),
 ):
     """Edit filter settings."""
-    gdb = SharedDB()
+    try:
+        gdb = SharedDB()
+    except Exception as e:
+        logging.fatal(f"Error: {e}")
+        typer.Exit(1)
     filter = gdb.get_filter(filter_name)
     logging.debug(f"Filter: {filter}")
     if not filter:
@@ -58,11 +62,14 @@ def edit(
 
 @app.command()
 def delete(
-    filter_name: str = Argument(None, help="Filter name"),
-    select: bool = Option(False, "--select", "-s", help="Select filter to delete"),
+    filter_name: str = typer.Argument(None, help="Filter name"),
 ):
-    gdb = SharedDB()
-    if not filter_name or select:
+    try:
+        gdb = SharedDB()
+    except Exception as e:
+        logging.fatal(f"Error: {e}")
+        return
+    if not filter_name:
         filter_name = inquirer.select(
             message="Select a filter to delete:",
             choices=[filter["name"] for filter in gdb.get_filters_all()],
@@ -74,7 +81,11 @@ def delete(
 @app.command()
 def list():
     """List all filters."""
-    gdb = SharedDB()
+    try:
+        gdb = SharedDB()
+    except Exception as e:
+        logging.fatal(f"Error: {e}")
+        return
     filters = gdb.get_filters_all()
     for filter in filters:
         console.print(f"[bold]{filter['name']}:[/bold]")

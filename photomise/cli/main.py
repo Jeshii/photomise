@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
 
-import configparser
-import logging
 import os
 
 import typer
-from InquirerPy import inquirer
 
 from photomise.cli import database, post, process, settings
-from photomise.utilities.constants import CONFIG_FILE
 from photomise.utilities.logging import setup_logging
 from photomise.utilities.project import fix_dir, get_project_db, sanitize_text
 
@@ -25,58 +21,37 @@ app.add_typer(
 )
 
 # Basic initialization
-config = configparser.ConfigParser()
 logger, console = setup_logging()
 
 
 @app.command()
 def init(
     project: str = typer.Argument(..., help="Project name"),
-    project_path: str = typer.Option(None, "--path", "-p", help="Path to project"),
+    project_path: str = typer.Option(None, "--path", "-p", prompt="Path to project"),
     description: bool = typer.Option(
         False,
         "--description",
         "-d",
-        help="Provide descriptions for visually impaired users",
+        prompt="Provide descriptions for visually impaired users",
     ),
     flavor: bool = typer.Option(
-        False, "--flavor", "-f", help="Provide flavor text for assets"
+        False, "--flavor", "-f", prompt="Provide flavor text for assets"
     ),
 ):
     """Initialize a new project."""
     settings = {}
+    try:
+        gdb = database.SharedDB()
+    except Exception as e:
+        logger.fatal(f"Error: {e}")
+        typer.Exit(1)
 
-    if os.path.exists(CONFIG_FILE):
-        config.read(CONFIG_FILE)
-
-    if not config.has_section("Projects"):
-        config["Projects"] = {}
-
-    config_dict = {
-        section: dict(config.items(section)) for section in config.sections()
-    }
-
-    projects = config_dict.get("Projects", {})
+    projects = gdb.proejcts
 
     if project in projects.keys():
-        logger.error(f"Project {project} already exists in config.ini")
+        logger.error(f"Project {project} already exists in global database.")
         return
-    logger.info(f"Adding {project} to config.ini")
-
-    if not project_path:
-        project_path = inquirer.text("Please the path for the project").execute()
-    if description:
-        settings["description"] = True
-    else:
-        settings["description"] = inquirer.confirm(
-            "Would you like to provide descriptions for visually impaired users?"
-        ).execute()
-    if flavor:
-        settings["flavor"] = True
-    else:
-        settings["flavor"] = inquirer.confirm(
-            "Would you like to provide flavor text for the assets?"
-        ).execute()
+    logger.info(f"Adding {project} to global database.")
 
     project_path = fix_dir(project_path)
     if not os.path.exists(project_path):
@@ -87,19 +62,7 @@ def init(
         os.makedirs(f"{project_path}/assets")
     project = sanitize_text(project.lower())
     projects[project] = project_path
-    try:
-        config["Projects"] = projects
-    except Exception as e:
-        logger.debug(
-            "Error updating config file", exc_info=True
-        )  # Full traceback in debug log
-        console.print(f"[red]Error updating config file: {e}")  # User-friendly message
-        return
-    with open(CONFIG_FILE, "w", encoding="utf-8") as configfile:
-        try:
-            config.write(configfile)
-        except IOError as e:
-            logging.exception(f"Error writing to config file: {e}")
+    gdb.upsert_project(project, project_path, description, flavor)
     pdb = get_project_db(project, project_path)
 
     settings = {
