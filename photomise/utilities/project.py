@@ -2,12 +2,12 @@ import os
 from urllib.parse import quote
 
 import pendulum
+import typer
 from InquirerPy import inquirer
 
 from photomise.database.project import ProjectDB
 from photomise.database.shared import SharedDB
 from photomise.utilities.logging import setup_logging
-import typer
 
 logging, console = setup_logging()
 
@@ -57,7 +57,9 @@ def set_project(
         projects = gdb.projects
 
         if not projects:
-            logging.fatal("No projects found in global database - please run photomise init.")
+            logging.fatal(
+                "No projects found in global database - please run photomise init."
+            )
             exit(1)
 
         sanitized_project_name = sanitize_text(project.lower())
@@ -67,7 +69,7 @@ def set_project(
             )
             exit(1)
         main_path = projects[sanitized_project_name]
-    
+
         pdb = get_project_db(project, main_path)
 
     return pdb, main_path

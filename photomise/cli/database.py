@@ -1,8 +1,8 @@
 import typer
 
 from photomise.database.shared import SharedDB
-from photomise.utilities.project import set_project
 from photomise.utilities.logging import setup_logging
+from photomise.utilities.project import set_project
 
 app = typer.Typer()
 logger, console = setup_logging()
@@ -26,4 +26,3 @@ def prettify(
     except Exception as e:
         logger.fatal(f"Error: {e}")
         typer.Exit(1)
-        

@@ -63,7 +63,6 @@ def images(
         typer.Exit(1)
 
     for dir, file in non_hidden_files:
-
         file_path = f"{dir}/{file}"
         relative_path = convert_to_relative_path(file_path, main_path)
 
@@ -92,7 +91,7 @@ def images(
             contrast = 1.0
             color = 1.0
             sharpness = 1.0
-        if view or all:
+        if all or (not photo_record and view):
             while True:
                 _ = compress_image(
                     image_path=file_path,

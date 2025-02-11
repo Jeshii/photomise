@@ -13,6 +13,7 @@ piexif = "*"
 pillow = "*"
 tinydb = "*"
 typer = "*"
+pillow-heif = "*"
 photomise = {file = ".", editable = true}
 
 [dev-packages]

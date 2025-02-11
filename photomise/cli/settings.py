@@ -1,5 +1,5 @@
-from InquirerPy import inquirer
 import typer
+from InquirerPy import inquirer
 
 from photomise.cli import filters, locations
 from photomise.database.shared import SharedDB

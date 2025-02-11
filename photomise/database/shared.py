@@ -6,6 +6,7 @@ from photomise.utilities.logging import setup_logging
 
 logger, console = setup_logging()
 
+
 class SharedDB(DatabaseManager):
     def __init__(self):
         super().__init__(SHARED_DB_PATH)
@@ -19,7 +20,9 @@ class SharedDB(DatabaseManager):
             logger.debug(f"Project: {v}")
             config[v["name"]] = v["path"]
         if not config:
-            raise ValueError("No projects found in global database - please run photomise init.")
+            raise ValueError(
+                "No projects found in global database - please run photomise init."
+            )
         return config
 
     def get_items(self, table) -> dict:
@@ -53,7 +56,7 @@ class SharedDB(DatabaseManager):
             return params["name"]
         else:
             return False
-        
+
     def upsert_project(self, params: dict) -> str:
         updated = self._filters.upsert(
             {

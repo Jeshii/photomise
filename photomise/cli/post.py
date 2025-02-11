@@ -9,8 +9,8 @@ import typer
 from atproto import Client, models
 from InquirerPy import inquirer
 
-from photomise.utilities import logging
 from photomise.database.shared import SharedDB
+from photomise.utilities import logging
 from photomise.utilities.exif import compress_image, get_image_aspect_ratio
 from photomise.utilities.post import get_bluesky_user, get_password_from_keyring
 from photomise.utilities.project import (
@@ -184,19 +184,26 @@ class SupportedProtocols(str, Enum):
 @app.command()
 def plist(
     project: str = typer.Argument(..., help="Project name or path"),
-    output_path: str = typer.Option(..., "-o","--output", prompt="Output path"),
-    platform: SupportedProtocols = typer.Option(SupportedProtocols.atprotocol, "-p","--protocol",case_sensitive=False),
-    schedule: str = typer.Option(..., "-s","--schedule", prompt="Cron-like schedule in mm hh format (e.g. '15 11,23')"),
+    output_path: str = typer.Option(..., "-o", "--output", prompt="Output path"),
+    platform: SupportedProtocols = typer.Option(
+        SupportedProtocols.atprotocol, "-p", "--protocol", case_sensitive=False
+    ),
+    schedule: str = typer.Option(
+        ...,
+        "-s",
+        "--schedule",
+        prompt="Cron-like schedule in mm hh format (e.g. '15 11,23')",
+    ),
 ):
     """Export a plist file for use with launchd for scheduled posting."""
-    
+
     try:
         gdb = SharedDB()
         projects = gdb.projects
         if project not in projects:
             logger.fatal(f"Project {project} not found in global database.")
             typer.Exit(1)
-        
+
         project_path = projects[project]
     except ValueError:
         project_path = project
@@ -210,18 +217,15 @@ def plist(
         typer.Exit(1)
 
     log_dir = logging.get_log_dir()
-    
+
     executable_path = sys.executable
 
     # Parse cron string
     try:
         minute, hours, *_ = schedule.split()
         calendar_intervals = []
-        for hour in hours.split(','):
-            calendar_intervals.append({
-                "Hour": int(hour),
-                "Minute": int(minute)
-            })
+        for hour in hours.split(","):
+            calendar_intervals.append({"Hour": int(hour), "Minute": int(minute)})
     except ValueError as e:
         logger.fatal(f"Invalid cron string format: {e}")
         typer.Exit(1)
@@ -232,7 +236,7 @@ def plist(
         "ProgramArguments": [
             "/bin/sh",
             "-c",
-            f'"{executable_path}" "{script_dir}" post {platform.value} {project_path} -r' # "{executable_path}" "{script_dir}" init {project} -p "{project_path}" && 
+            f'"{executable_path}" "{script_dir}" post {platform.value} {project_path} -r',  # "{executable_path}" "{script_dir}" init {project} -p "{project_path}" &&
         ],
         "StartCalendarInterval": calendar_intervals,
         "StandardOutPath": f"{log_dir}/photomise-{project}.out",
@@ -245,4 +249,6 @@ def plist(
     with open(output_file_path, "wb") as plist_file:
         plistlib.dump(plist_data, plist_file)
 
-    console.print(f"Plist file exported to {output_path}. Run [bold]launchctl load {output_file_path}[/bold] to schedule the task.")
+    console.print(
+        f"Plist file exported to {output_path}. Run [bold]launchctl load {output_file_path}[/bold] to schedule the task."
+    )

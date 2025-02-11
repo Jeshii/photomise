@@ -1,5 +1,5 @@
-from pathlib import Path
 import os
+from pathlib import Path
 
 import pendulum
 
@@ -10,7 +10,7 @@ logging, console = setup_logging()
 
 
 class ProjectDB(DatabaseManager):
-    def __init__(self, project_name: str=None, project_path: Path=None):
+    def __init__(self, project_name: str = None, project_path: Path = None):
         """
         Initialize the project database object.
 
