@@ -1,13 +1,14 @@
 import os
-from tinydb.table import Document
-from tinydb.queries import Query
 from typing import List
 
 import pendulum
+from tinydb.queries import Query
+from tinydb.table import Document
 
 from photomise.database.base import DatabaseManager
 from photomise.database.shared import SharedDB
 from photomise.utilities.logging import setup_logging
+from photomise.utilities.photo import Photo
 
 logging, console = setup_logging()
 
@@ -98,6 +99,15 @@ class ProjectDB(DatabaseManager):
         self._accounts.insert({"where": "Bluesky", "user": user})
 
     # Events table methods
+    def count_events(self):
+        """
+        Count the number of events in the database.
+
+        Returns:
+            int: Number of events.
+        """
+        return len(self._events)
+
     def get_event(self, event_name: str):
         """
         Get an event from the database.
@@ -235,7 +245,16 @@ class ProjectDB(DatabaseManager):
         return events_with_photo
 
     # Photos table methods
-    def get_photo(self, path: str) -> dict:
+    def count_photos(self):
+        """
+        Count the number of photos in the database.
+
+        Returns:
+            int: Number of photos.
+        """
+        return len(self._photos)
+
+    def get_photo(self, path: str) -> Photo | bool:
         """
         Get a photo from the database by relative path.
 
@@ -243,44 +262,14 @@ class ProjectDB(DatabaseManager):
             path (str): Path to the photo.
 
         Returns:
-            dict: Photo data.
+            Photo: Photo object.
         """
 
         from_db = self._photos.get(self._query.path == path)
         if not from_db:
             return False
-        photo_data = self.set_photo_defaults(path)
-        for key in photo_data:
-            if from_db and key in from_db:
-                photo_data[key] = from_db[key]
-        return photo_data
 
-    def set_photo_defaults(self, path:str) -> dict:
-        """
-        Set default values for a photo.
-        
-        Args:
-            path (str): Path to the photo.
-            
-        Returns:
-            dict: Photo data.
-        """
-        photo_data = {
-            "path": path,
-            "rotation": 0,
-            "quality": self.settings.get("quality", 80),
-            "brightness": 1.0,
-            "contrast": 1.0,
-            "sharpness": 1.0,
-            "color": 1.0,
-            "description": "",
-            "flavor": "",
-        }
-        
-        return photo_data
-    
-    
-    
+        return Photo.from_dict(from_db)
 
     def get_photos_by_event(self, event: str):
         """
@@ -298,7 +287,7 @@ class ProjectDB(DatabaseManager):
                 photos.append(photo)
         return photos
 
-    def upsert_photo(self, photo: dict):
+    def upsert_photo(self, photo: Photo) -> List[int]:
         """
         Update or insert a photo into the database.
 
@@ -306,9 +295,9 @@ class ProjectDB(DatabaseManager):
             photo (dict): Photo data.
 
         Returns:
-            bool: True if the photo was updated, False if it was inserted.
+            List[int]: Document IDs that were updated/inserted.
         """
-        return self._photos.upsert(photo, self._query.path == photo["path"])
+        return self._photos.upsert(photo.to_dict(), self._query.path == photo.path)
 
     def remove_photo(self, photo: dict):
         """
@@ -320,6 +309,15 @@ class ProjectDB(DatabaseManager):
         self._photos.remove(self._query.path == photo["path"])
 
     # Posts table methods
+    def count_posts(self):
+        """
+        Count the number of posts in the database.
+
+        Returns:
+            int: Number of posts.
+        """
+        return len(self._posts)
+
     def set_post(self, event_name, user, platform, uri):
         """
         Set a post in the database.
@@ -348,6 +346,15 @@ class ProjectDB(DatabaseManager):
         )
 
     # Rankings table methods
+    def count_rankings(self):
+        """
+        Count the number of rankings in the database.
+
+        Returns:
+            int: Number of rankings.
+        """
+        return len(self._rankings)
+
     def get_rankings_by_event(self, event: str):
         """
         Get rankings for a specific event.

@@ -11,7 +11,7 @@ from InquirerPy import inquirer
 
 from photomise.database.shared import SharedDB
 from photomise.utilities import logging
-from photomise.utilities.exif import compress_image, get_image_aspect_ratio
+from photomise.utilities.photo import Photo, get_image_aspect_ratio
 from photomise.utilities.post import get_bluesky_user, get_password_from_keyring
 from photomise.utilities.project import (
     convert_to_absolute_path,
@@ -110,31 +110,21 @@ def atprotocol(
             )
 
             photo_entry = pdb.get_photo(path)
-            if photo_entry:
-                rotation_angle = photo_entry.get("rotation", 0)
-                quality = photo_entry.get("quality", pdb.settings.get("quality", 80))
-                description = photo_entry.get("description", f"{event_name}-{path}")
-                flavor = photo_entry.get("flavor", "")
-                max_dimension = photo_entry.get(
-                    "max_dimension", pdb.settings.get("max_dimension", 1200)
-                )
-            else:
-                rotation_angle = 0
-                quality = pdb.settings.get("quality", 80)
-                description = ""
-                max_dimension = pdb.settings.get("max_dimension", 1200)
+            if not photo_entry:
+                logger.debug(f"[{project}] Photo {path} not found in database")
+                photo_entry = Photo(path, quality=pdb.settings.get("quality", 80))
+            max_dimension = pdb.settings.get("max_dimension", 1200)
+            if not photo_entry.description:
+                photo_entry.description = f"{event_name}-{path}"
             try:
-                compressed_image = compress_image(
-                    full_path,
-                    rotation_angle=rotation_angle,
-                    quality=quality,
+                compressed_image = photo_entry.compress_image(
                     show=view,
                     max_dimension=max_dimension,
                 )
 
                 images.append(compressed_image)
-                image_alts.append(description)
-                flavors.append(flavor)
+                image_alts.append(photo_entry.description)
+                flavors.append(photo_entry.flavor)
             except Exception as e:
                 logger.fatal(f"Error compressing image: {e}")
                 return

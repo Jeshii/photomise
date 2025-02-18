@@ -37,6 +37,9 @@ class SharedDB(DatabaseManager):
         filter = self._filters.get(self._query.name == filter_name)
         return filter
 
+    def count_filters(self) -> int:
+        return len(self._filters)
+
     def get_filters_all(self) -> dict:
         return self._filters.all()
 
@@ -73,6 +76,9 @@ class SharedDB(DatabaseManager):
             return params["name"]
         else:
             return False
+
+    def count_locations(self) -> int:
+        return len(self._locations)
 
     def get_location(self, location_name: str) -> dict:
         return self._locations.get(self._query.name == location_name)

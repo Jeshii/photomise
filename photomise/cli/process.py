@@ -7,18 +7,18 @@ import pendulum
 import piexif
 import typer
 from InquirerPy import inquirer
-
+from spellchecker import SpellChecker
 
 from photomise.database.shared import SharedDB
-from photomise.utilities.exif import (
-    compress_image,
+from photomise.utilities.logging import setup_logging
+from photomise.utilities.photo import (
+    Photo,
     convert_to_degrees,
     deg_to_dms_rational,
     extract_datetime,
     extract_exif_info,
     extract_gps,
 )
-from photomise.utilities.logging import setup_logging
 from photomise.utilities.project import (
     convert_to_absolute_path,
     convert_to_relative_path,
@@ -29,8 +29,6 @@ from photomise.utilities.project import (
     set_project,
 )
 from photomise.utilities.shared import make_min_max_prompt, spellcheck
-
-from spellchecker import SpellChecker
 
 spell = SpellChecker()
 
@@ -71,6 +69,7 @@ def images(
         typer.Exit(1)
 
     for dir, file in non_hidden_files:
+        error = None
         file_path = f"{dir}/{file}"
         relative_path = convert_to_relative_path(file_path, main_path)
 
@@ -78,37 +77,41 @@ def images(
         console.print(f"[bold]Checking {file_path}[/bold]")
 
         photo_record = pdb.get_photo(relative_path)
-        
+
         logger.debug(f"[{project}] Photo Record: {photo_record}")
         logger.debug(f"[{project}] View flag: {view}")
         logger.debug(f"[{project}] All flag: {all}")
         if all or (view and not photo_record):
             if not photo_record:
-                photo_record = pdb.set_photo_defaults(relative_path)
-            while True:
-                _ = compress_image(
-                    image_path=file_path,
-                    rotation_angle=photo_record.get("rotation", 0),
-                    quality=photo_record.get("quality", pdb.settings.get("quality")),
-                    brightness=photo_record.get("brightness", 1.0),
-                    contrast=photo_record.get("contrast", 1.0),
-                    color=photo_record.get("color", 1.0),
-                    sharpness=photo_record.get("sharpness", 1.0),
-                    show=True,
+                photo_record = Photo(
+                    path=file_path, quality=pdb.settings.get("quality", 80)
                 )
+            while True:
+                try:
+                    result, error = photo_record.compress_image(
+                        show=True,
+                    )
+                    if error is not None or not result:
+                        logging.error(f"Error: {error}")
+                        break
+                except Exception as e:
+                    logging.error(f"Error: {e}")
+                    error = e
+                    break
+
                 if inquirer.confirm(message="Does the image look okay?").execute():
                     break
                 else:
-                    photo_record["quality"] = inquirer.select(
+                    photo_record.quality = inquirer.select(
                         message="Choose a quality level",
                         choices=[10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
-                        default=photo_record.get("quality", pdb.settings.get("quality")),
+                        default=photo_record.quality,
                     ).execute()
 
-                    photo_record["rotation"] = inquirer.select(
+                    photo_record.rotation = inquirer.select(
                         message="Choose a rotation angle",
                         choices=[0, 90, 180, 270],
-                        default=photo_record.get("rotation", 0),
+                        default=photo_record.rotation,
                     ).execute()
 
                     filter_choices = ["None"] + [
@@ -117,10 +120,10 @@ def images(
                     filter_choices.append("Custom")
 
                     filter_search_params = {
-                        "brightness": photo_record.get("brightness", 1.0),
-                        "contrast": photo_record.get("contrast", 1.0),
-                        "color": photo_record.get("color", 1.0),
-                        "sharpness": photo_record.get("sharpness", 1.0),
+                        "brightness": photo_record.brightness,
+                        "contrast": photo_record.contrast,
+                        "color": photo_record.color,
+                        "sharpness": photo_record.sharpness,
                     }
 
                     filter_to_apply = inquirer.select(
@@ -131,46 +134,55 @@ def images(
 
                     match filter_to_apply:
                         case "Custom":
-                            photo_record["brightness"] = make_min_max_prompt(
-                                "Adjust brightness", photo_record.get("brightness", 1.0),
+                            photo_record.brightness = make_min_max_prompt(
+                                "Adjust brightness",
+                                photo_record.brightness,
                             )
-                            photo_record["contrast"] = make_min_max_prompt(
-                                "Adjust contrast", photo_record.get("contrast", 1.0),
-                                )
-                            photo_record["color"] = make_min_max_prompt(
-                                "Adjust color", photo_record.get("color", 1.0),
-                                                        )
-                            photo_record["sharpness"] = make_min_max_prompt(
-                                "Adjust sharpness", photo_record.get("sharpness", 1.0)
+                            photo_record.contrast = make_min_max_prompt(
+                                "Adjust contrast",
+                                photo_record.contrast,
+                            )
+                            photo_record.color = make_min_max_prompt(
+                                "Adjust color",
+                                photo_record.color,
+                            )
+                            photo_record.sharpness = make_min_max_prompt(
+                                "Adjust sharpness",
+                                photo_record.sharpness,
                             )
                         case "None":
-                            photo_record["brightness"] = 1.0
-                            photo_record["contrast"] = 1.0
-                            photo_record["color"] = 1.0
-                            photo_record["sharpness"] = 1.0
+                            photo_record.brightness = 1.0
+                            photo_record.contrast = 1.0
+                            photo_record.color = 1.0
+                            photo_record.sharpness = 1.0
                         case _:
                             filter = gdb.get_filter(filter_to_apply)
-                            photo_record["brightness"] = filter.get("brightness", 1.0)
-                            photo_record["contrast"] = filter.get("contrast", 1.0)
-                            photo_record["color"] = filter.get("color", 1.0)
-                            photo_record["sharpness"] = filter.get("sharpness", 1.0)
-        
-        if not photo_record:
-            photo_record = pdb.set_photo_defaults(relative_path)
+                            photo_record.brightness = filter.get("brightness", 1.0)
+                            photo_record.contrast = filter.get("contrast", 1.0)
+                            photo_record.color = filter.get("color", 1.0)
+                            photo_record.sharpness = filter.get("sharpness", 1.0)
 
-        default_description = photo_record.get("description")
-        default_flavor = photo_record.get("flavor")
+        if error:
+            continue
+
+        if not photo_record:
+            photo_record = Photo(
+                path=relative_path, quality=pdb.settings.get("quality", 80)
+            )
+
+        default_description = photo_record.description
+        default_flavor = photo_record.flavor
 
         if (pdb.settings.get("description") and not default_description) or all:
             description = inquirer.text(
                 message="Enter a description for visually impaired users about this image:",
                 default=default_description,
             ).execute()
-            
+
             if check_spelling:
                 description = spellcheck(description)
-            
-            photo_record["description"] = description
+
+            photo_record.description = description
 
         if (pdb.settings.get("flavor") and not default_flavor) or all:
             flavor = inquirer.text(
@@ -181,22 +193,11 @@ def images(
             if check_spelling:
                 flavor = spellcheck(flavor)
 
-            photo_record["flavor"] = flavor
+            photo_record.flavor = flavor
 
+        photo_record.path = relative_path
 
-        photo = {
-            "path": relative_path,
-            "description": photo_record.get("description"),
-            "flavor": photo_record.get("flavor"),
-            "rotation": photo_record.get("rotation", 0),
-            "quality": photo_record.get("quality", pdb.settings.get("quality")),
-            "brightness": photo_record.get("brightness", 1.0),
-            "contrast": photo_record.get("contrast", 1.0),
-            "color": photo_record.get("color", 1.0),
-            "sharpness": photo_record.get("sharpness", 1.0),
-        }
-
-        updated = pdb.upsert_photo(photo)
+        updated = pdb.upsert_photo(photo_record)
 
         logging.debug(f"Updated Photo: {updated}")
 
@@ -211,7 +212,8 @@ def locations(
         None,
         "--link",
         "-l",
-        help="Helper link to append to latitude and longitude to help find location"),
+        help="Helper link to append to latitude and longitude to help find location",
+    ),
     view: bool = typer.Option(
         False, "--view", "-v", help="View files before processing"
     ),
@@ -261,16 +263,9 @@ def locations(
             logging.info(f"Error extracting exif info: {e}")
 
         photo_record = pdb.get_photo(relative_path)
-        
+
         if view:
-            _ = compress_image(
-                image_path=file_path,
-                rotation_angle=photo_record.get("rotation", 0),
-                quality=photo_record.get("quality", pdb.settings.get("quality")),
-                brightness=photo_record.get("brightness", 1.0),
-                contrast=photo_record.get("contrast", 1.0),
-                color=photo_record.get("color", 1.0),
-                sharpness=photo_record.get("sharpness", 1.0),
+            _ = photo_record.compress_image(
                 show=True,
             )
 
@@ -452,22 +447,16 @@ def rank(
         if view:
             for photo_path in photos:
                 photo_record = pdb.get_photo(photo_path)
-                absolute_path = convert_to_absolute_path(photo_path, main_path)
-                compress_image(
-                    image_path=absolute_path,
-                    rotation_angle=photo_record.get("rotation", 0),
-                    quality=photo_record.get("quality", pdb.settings.get("quality")),
-                    brightness=photo_record.get("brightness", 1.0),
-                    contrast=photo_record.get("contrast", 1.0),
-                    color=photo_record.get("color", 1.0),
-                    sharpness=photo_record.get("sharpness", 1.0),
+                photo_record.compress_image(
                     show=True,
                 )
         for photo_record in photos:
             previous_rank = pdb.get_rank_by_photo(photo_record)
             if unranked and previous_rank:
                 continue
-            logging.debug(f"[{project}] Previous Rank for {photo_record}: {previous_rank}")
+            logging.debug(
+                f"[{project}] Previous Rank for {photo_record}: {previous_rank}"
+            )
             rank = inquirer.text(
                 message=f"Enter a rank for this photo - {convert_to_absolute_path(photo_record, main_path)}:",
                 default=str(previous_rank),
@@ -494,14 +483,7 @@ def rank(
                 console.print(f"\tRank {rank['rank']}: {absolute_path_rank}")
                 if view:
                     photo_record = pdb.get_photo(photo_path)
-                    compress_image(
-                        image_path=absolute_path_rank,
-                        rotation_angle=photo_record.get("rotation", 0), 
-                        quality=photo_record.get("quality", pdb.settings.get("quality")),
-                        brightness=photo_record.get("brightness",1.0),
-                        contrast=photo_record.get("contrast", 1.0),
-                        color=photo_record.get("color", 1.0),
-                        sharpness=photo_record.get("sharpness", 1.0),
+                    photo_record.compress_image(
                         show=True,
                     )
     pdb.close()
@@ -547,15 +529,7 @@ def prune(
         if view:
             for photo_path in photos:
                 photo_record = pdb.get_photo(photo_path)
-                absolute_path = convert_to_absolute_path(photo_path, main_path)
-                compress_image(
-                    image_path=absolute_path,
-                    rotation_angle=photo_record.get("rotation", 0),
-                    quality=photo_record.get("quality", pdb.settings.get("quality")),
-                    brightness=photo_record.get("brightness", 1.0),
-                    contrast=photo_record.get("contrast", 1.0),
-                    color=photo_record.get("color", 1.0),
-                    sharpness=photo_record.get("sharpness", 1.0),
+                photo_record.compress_image(
                     show=True,
                 )
         for photo_record in photos:
@@ -572,9 +546,11 @@ def prune(
                     os.makedirs(trash_folder, exist_ok=True)
                     os.rename(
                         convert_to_absolute_path(photo_record, main_path),
-                        os.path.join(trash_folder, os.path.basename(photo_record))
+                        os.path.join(trash_folder, os.path.basename(photo_record)),
                     )
-                    console.print(f"Photo removed completely and file moved to {trash_folder}.")
+                    console.print(
+                        f"Photo removed completely and file moved to {trash_folder}."
+                    )
                 else:
                     pdb.remove_photo_from_event(events, photo_record, event_name)
                     console.print(f"Photo removed from {event_name}.")

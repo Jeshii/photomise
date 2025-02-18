@@ -2,8 +2,9 @@
 *.json
 *.ini
 
-# Ignore ds store
+# Ignore dot stuff
 .DS_Store
+.vscode/
 
 # Ignore all files in the directory
 __pycache__/
