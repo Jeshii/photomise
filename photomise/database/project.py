@@ -1,16 +1,19 @@
 import os
-from pathlib import Path
+from tinydb.table import Document
+from tinydb.queries import Query
+from typing import List
 
 import pendulum
 
 from photomise.database.base import DatabaseManager
+from photomise.database.shared import SharedDB
 from photomise.utilities.logging import setup_logging
 
 logging, console = setup_logging()
 
 
 class ProjectDB(DatabaseManager):
-    def __init__(self, project_name: str = None, project_path: Path = None):
+    def __init__(self, project_name: str = "", project_path: str = ""):
         """
         Initialize the project database object.
 
@@ -47,6 +50,7 @@ class ProjectDB(DatabaseManager):
         self._posts = self.get_table("posts")
         self._accounts = self.get_table("accounts")
         self._rankings = self.get_table("rankings")
+        self._query = Query()
 
     # Settings table methods
     @property
@@ -72,7 +76,7 @@ class ProjectDB(DatabaseManager):
         return self._settings.upsert(settings, self._query.doc_id == 1)
 
     # Accounts table methods
-    def get_bluesky_user(self):
+    def get_bluesky_user(self) -> Document | List[Document] | None:
         """
         Get the Bluesky user from the database.
 
@@ -80,7 +84,7 @@ class ProjectDB(DatabaseManager):
             str: Bluesky username.
         """
         try:
-            return self._accounts.get(self._query.where == "Bluesky")["user"]
+            return self._accounts.get(self._query.where == "Bluesky")
         except TypeError:
             return None
 
@@ -107,7 +111,7 @@ class ProjectDB(DatabaseManager):
         logging.info(f"[{self.project_name}] Getting event: {event_name}")
         return self._events.get(self._query.event == event_name)
 
-    def get_events(self, event_names: list = None):
+    def get_events(self, event_names: list = []):
         """
         Get some or all events from the database.
 
@@ -141,7 +145,7 @@ class ProjectDB(DatabaseManager):
         return events
 
     def same_event(
-        self, date: pendulum, location: str, max_time_delta_in_hours: int = 8
+        self, date: pendulum.DateTime, location: str, max_time_delta_in_hours: int = 8
     ):
         """
         Check if an event exists in the database with the same location and within a certain time delta.
@@ -174,7 +178,7 @@ class ProjectDB(DatabaseManager):
         """
         return self._events.search(self._query["date"] == date.timestamp())
 
-    def upsert_event(self, event: dict, path: str = None):
+    def upsert_event(self, event: dict, path: str = "") -> List[int]:
         """
         Update or insert an event into the database.
 
@@ -192,7 +196,7 @@ class ProjectDB(DatabaseManager):
         return updated
 
     def remove_photo_from_event(
-        self, events: list, photo_path: str, keep_idx: int = None
+        self, events: list, photo_path: str, keep_idx: int = 0
     ) -> None:
         """
         Remove a photo from all events except the one specified.
@@ -231,7 +235,7 @@ class ProjectDB(DatabaseManager):
         return events_with_photo
 
     # Photos table methods
-    def get_photo(self, path: str):
+    def get_photo(self, path: str) -> dict:
         """
         Get a photo from the database by relative path.
 
@@ -241,7 +245,42 @@ class ProjectDB(DatabaseManager):
         Returns:
             dict: Photo data.
         """
-        return self._photos.get(self._query.path == path)
+
+        from_db = self._photos.get(self._query.path == path)
+        if not from_db:
+            return False
+        photo_data = self.set_photo_defaults(path)
+        for key in photo_data:
+            if from_db and key in from_db:
+                photo_data[key] = from_db[key]
+        return photo_data
+
+    def set_photo_defaults(self, path:str) -> dict:
+        """
+        Set default values for a photo.
+        
+        Args:
+            path (str): Path to the photo.
+            
+        Returns:
+            dict: Photo data.
+        """
+        photo_data = {
+            "path": path,
+            "rotation": 0,
+            "quality": self.settings.get("quality", 80),
+            "brightness": 1.0,
+            "contrast": 1.0,
+            "sharpness": 1.0,
+            "color": 1.0,
+            "description": "",
+            "flavor": "",
+        }
+        
+        return photo_data
+    
+    
+    
 
     def get_photos_by_event(self, event: str):
         """
