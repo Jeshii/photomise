@@ -4,10 +4,12 @@ from pathlib import Path
 
 from rich.console import Console
 
+from photomise.utilities.constants import LOG_DIR
+
 
 def get_log_dir() -> Path:
     """Get the log directory path"""
-    log_dir = Path.home() / ".photomise" / "logs"
+    log_dir = LOG_DIR
     log_dir.mkdir(parents=True, exist_ok=True)
     return log_dir
 

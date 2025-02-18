@@ -162,6 +162,8 @@ def images(
                             photo_record.color = filter.get("color", 1.0)
                             photo_record.sharpness = filter.get("sharpness", 1.0)
 
+                logging.debug(f"[{project}] Photo info: {photo_record}")
+
         if error:
             continue
 
@@ -199,7 +201,7 @@ def images(
 
         updated = pdb.upsert_photo(photo_record)
 
-        logging.debug(f"Updated Photo: {updated}")
+        logging.debug(f"[{project}] Photo info saved: {updated}")
 
     pdb.close()
     gdb.close()

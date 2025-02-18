@@ -5,6 +5,7 @@ import typer
 from rich.table import Table
 
 from photomise.database.shared import SharedDB
+from photomise.utilities.constants import LOG_DIR
 from photomise.utilities.logging import setup_logging
 from photomise.utilities.project import set_project
 from photomise.utilities.shared import format_file_size
@@ -72,13 +73,20 @@ def stats(
 
         # Global stats
         gdb = SharedDB()
+        log_size = sum(
+            os.path.getsize(os.path.join(dirpath, filename))
+            for dirpath, _, filenames in os.walk(LOG_DIR)
+            for filename in filenames
+        )
         data["shared"] = {
-            "db_path": gdb.path,
+            "db_path": os.path.abspath(gdb.path),
             "db_size": (
                 os.path.getsize(gdb.path)
                 if json
                 else format_file_size(os.path.getsize(gdb.path))
             ),
+            "log_path": os.path.abspath(LOG_DIR),
+            "log_size": log_size if json else format_file_size(log_size),
             "project_count": len(gdb.projects),
             "location_count": gdb.count_locations(),
             "filter_count": gdb.count_filters(),
