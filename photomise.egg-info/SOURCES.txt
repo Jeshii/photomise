@@ -23,8 +23,10 @@ photomise/database/shared.py
 photomise/utilities/__init__.py
 photomise/utilities/atprotocol.py
 photomise/utilities/constants.py
-photomise/utilities/exif.py
+photomise/utilities/event.py
+photomise/utilities/location.py
 photomise/utilities/logging.py
+photomise/utilities/photo.py
 photomise/utilities/post.py
 photomise/utilities/project.py
 photomise/utilities/shared.py
