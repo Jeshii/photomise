@@ -7,6 +7,7 @@ from InquirerPy import inquirer
 
 from photomise.database.project import ProjectDB
 from photomise.database.shared import SharedDB
+from photomise.utilities.event import Event
 from photomise.utilities.logging import setup_logging
 
 logging, console = setup_logging()
@@ -134,7 +135,9 @@ def get_non_hidden_files(directory: str):
         yield None, None
 
 
-def handle_duplicate_events(pdb: ProjectDB, events: list, photo_path: str) -> None:
+def handle_duplicate_events(
+    pdb: ProjectDB, events: list[Event], photo_path: str
+) -> None:
     """
     Handle events that contain the same photo.
 
@@ -152,7 +155,7 @@ def handle_duplicate_events(pdb: ProjectDB, events: list, photo_path: str) -> No
     )
     for idx, event in enumerate(events, 1):
         console.print(
-            f"{idx}. {event['event']} ({pendulum.from_timestamp(event['date']).format('YYYY-MM-DD')})"
+            f"{idx}. {event.name} ({pendulum.from_timestamp(event.date).format('YYYY-MM-DD')})"
         )
 
     keep_idx = inquirer.select(

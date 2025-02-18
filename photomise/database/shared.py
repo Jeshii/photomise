@@ -2,6 +2,7 @@ from geopy.distance import great_circle
 
 from photomise.database.base import DatabaseManager
 from photomise.utilities.constants import SHARED_DB_PATH
+from photomise.utilities.location import Location
 from photomise.utilities.logging import setup_logging
 
 logger, console = setup_logging()
@@ -80,28 +81,22 @@ class SharedDB(DatabaseManager):
     def count_locations(self) -> int:
         return len(self._locations)
 
-    def get_location(self, location_name: str) -> dict:
-        return self._locations.get(self._query.name == location_name)
-
-    def get_location_coord(self, lat: float, lon: float) -> dict:
-        return self._locations.get(
-            (self._query.latitude == lat) & (self._query.longitude == lon)
+    def get_location(self, location_name: str) -> Location:
+        return Location.from_dict(
+            self._locations.get(self._query.name == location_name)
         )
 
-    def upsert_location(self, params: dict) -> str:
-        updated = self._locations.upsert(
-            {
-                "name": params["location_name"],
-                "latitude": params["latitude"],
-                "longitude": params["longitude"],
-            },
-            self._query.name == params["location_name"],
+    def get_location_coord(self, lat: float, lon: float) -> Location:
+        return Location.from_dict(
+            self._locations.get(
+                (self._query.latitude == lat) & (self._query.longitude == lon)
+            )
         )
 
-        if updated:
-            return params["location_name"]
-        else:
-            return False
+    def upsert_location(self, location: Location) -> str:
+        return self._locations.upsert(
+            location.to_dict(), self._query.name == location.name
+        )
 
     def get_filter_from_values(self, params: dict) -> str:
         for filter in self._filters.all():
@@ -116,7 +111,7 @@ class SharedDB(DatabaseManager):
 
     def find_location(
         self, latitude: float, longitude: float, max_distance_km: float = 0.5
-    ):
+    ) -> Location:
         closest_location = None
         closest_distance = max_distance_km
 
@@ -125,8 +120,7 @@ class SharedDB(DatabaseManager):
             distance = great_circle((latitude, longitude), location_coords).kilometers
 
             if distance < closest_distance:
-                closest_location = item["name"]
-                closest_distance = distance
+                closest_location = Location.from_dict(item)
 
         return closest_location
 

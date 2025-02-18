@@ -2,11 +2,14 @@ import os
 from typing import List
 
 import pendulum
+from InquirerPy import inquirer
 from tinydb.queries import Query
 from tinydb.table import Document
 
 from photomise.database.base import DatabaseManager
 from photomise.database.shared import SharedDB
+from photomise.utilities.event import Event
+from photomise.utilities.location import Location
 from photomise.utilities.logging import setup_logging
 from photomise.utilities.photo import Photo
 
@@ -108,7 +111,7 @@ class ProjectDB(DatabaseManager):
         """
         return len(self._events)
 
-    def get_event(self, event_name: str):
+    def get_event(self, event_name: str) -> Event:
         """
         Get an event from the database.
 
@@ -119,7 +122,7 @@ class ProjectDB(DatabaseManager):
             dict: Event data.
         """
         logging.info(f"[{self.project_name}] Getting event: {event_name}")
-        return self._events.get(self._query.event == event_name)
+        return Event.from_dict(self._events.get(self._query.name == event_name))
 
     def get_events(self, event_names: list = []):
         """
@@ -133,8 +136,9 @@ class ProjectDB(DatabaseManager):
         """
         events = {}
         for document in self._events.all():
-            if not event_names or document["event"] in event_names:
-                events[document["event"]] = document
+            event = Event.from_dict(document)
+            if not event_names or event.name in event_names:
+                events[event.name] = event
         return events
 
     def get_events_without_bluesky_posted(self):
@@ -169,12 +173,15 @@ class ProjectDB(DatabaseManager):
             tuple: Date of the event, event data, and True if the event exists, False otherwise.
         """
         for item in self._events.all():
-            db_date = pendulum.from_timestamp(item["date"])
+            event = Event.from_dict(item)
+            db_date = pendulum.from_timestamp(event.date)
             time_delta = date.diff(db_date).in_hours()
 
-            if time_delta < max_time_delta_in_hours and location == item["location"]:
-                return db_date, item["event"], True
-        return date, None, False
+            if time_delta < max_time_delta_in_hours and event.location == location.name:
+                inquirer.confirm(f"Event: {event}").execute()
+                return event, True
+        inquirer.confirm(f"Date: {date}").execute()
+        return date, False
 
     def is_event(self, date: pendulum.DateTime):
         """
@@ -188,7 +195,7 @@ class ProjectDB(DatabaseManager):
         """
         return self._events.search(self._query["date"] == date.timestamp())
 
-    def upsert_event(self, event: dict, path: str = "") -> List[int]:
+    def upsert_event(self, event: Event, path: str = "") -> List[int]:
         """
         Update or insert an event into the database.
 
@@ -200,13 +207,14 @@ class ProjectDB(DatabaseManager):
             bool: True if the event was updated, False if it was inserted.
         """
         if path:
-            event["photos"] = event.get("photos", []) + [path]
+            event.photos = event.photos + [path]
 
-        updated = self._events.upsert(event, self._query.event == event["event"])
+        updated = self._events.upsert(event.to_dict(), self._query.event == event.name)
         return updated
 
+    ### NOT WORKING when called from handle_duplicate_events()
     def remove_photo_from_event(
-        self, events: list, photo_path: str, keep_idx: int = 0
+        self, events: list[Event], photo_path: str, keep_idx: int = 0
     ) -> None:
         """
         Remove a photo from all events except the one specified.
@@ -219,16 +227,18 @@ class ProjectDB(DatabaseManager):
         if keep_idx:
             keep_event = events[int(keep_idx) - 1]
         else:
-            keep_event = {"event": None}
+            keep_event = Event()
+        print("Keep event:", keep_event)
         for event in events:
-            if event["event"] != keep_event["event"]:
-                photos = event.get("photos", [])
+            if event.name != keep_event.name:
+                print(f"Removing photo from {event.name}")
+                photos = event.photos
                 photos.remove(photo_path)
                 self._events.update(
-                    {"photos": photos}, self._query.event == event["event"]
+                    {"photos": event.photos}, self._query.event == event.name
                 )
 
-    def find_events_with_photo(self, photo_path: str) -> list:
+    def find_events_with_photo(self, photo_path: str) -> list[Event]:
         """
         Find all events containing a specific photo.
 
@@ -239,8 +249,9 @@ class ProjectDB(DatabaseManager):
             list: List of events containing the photo.
         """
         events_with_photo = []
-        for event in self._events.all():
-            if photo_path in event.get("photos", []):
+        for event_dict in self._events.all():
+            event = Event.from_dict(event_dict)
+            if photo_path in event.photos:
                 events_with_photo.append(event)
         return events_with_photo
 

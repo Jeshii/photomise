@@ -1,6 +1,7 @@
-# Ignore all files ending with .json
+# Ignore all files with certain endings
 *.json
 *.ini
+*.bak
 
 # Ignore dot stuff
 .DS_Store

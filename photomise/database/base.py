@@ -1,7 +1,12 @@
 import json
+import shutil
 
 from tinydb import Query, TinyDB
 from tinydb.table import Table
+
+from photomise.utilities.logging import setup_logging
+
+logger, console = setup_logging()
 
 
 class DatabaseManager:
@@ -18,6 +23,13 @@ class DatabaseManager:
         self.make_json_readable()
 
     def make_json_readable(self) -> bool:
+        """
+        Makes the JSON file at the database path readable by formatting it with indentation.
+
+        Returns:
+            bool: True if the JSON file was successfully formatted, False otherwise.
+        """
+        shutil.copy(self.path, f"{self.path}.bak")
         try:
             with open(self.path, "r") as file:
                 data = json.load(file)
@@ -27,4 +39,10 @@ class DatabaseManager:
 
             return True
         except json.JSONDecodeError:
+            logger.error("Error: JSONDecodeError")
+            shutil.copy(f"{self.path}.bak", self.path)
+            return False
+        except Exception as e:
+            logger.error(f"Error: {e}")
+            shutil.copy(f"{self.path}.bak", self.path)
             return False
