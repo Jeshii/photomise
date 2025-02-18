@@ -240,5 +240,8 @@ def plist(
         plistlib.dump(plist_data, plist_file)
 
     console.print(
-        f"Plist file exported to {output_path}. Run [bold]launchctl load {output_file_path}[/bold] to schedule the task."
+        f"""Plist file exported to {output_path}.
+Run [bold]launchctl load {output_file_path}[/bold] to schedule the task.
+Run [bold]launchctl unload {output_file_path}[/bold] to remove the schedule.
+Run [bold]launchctl list | grep {project}[/bold] to check the status of the scheduled task."""
     )
