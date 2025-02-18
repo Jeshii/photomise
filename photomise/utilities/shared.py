@@ -64,7 +64,3 @@ def format_file_size(size: int) -> str:
             break
         size /= 1024.0
     return f"{size:.2f} {unit}"
-
-
-def json_print(data: dict, json: bool) -> None:
-    console = Console()
