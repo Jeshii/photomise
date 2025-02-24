@@ -86,13 +86,6 @@ class SharedDB(DatabaseManager):
             self._locations.get(self._query.name == location_name)
         )
 
-    def get_location_coord(self, lat: float, lon: float) -> Location:
-        return Location.from_dict(
-            self._locations.get(
-                (self._query.latitude == lat) & (self._query.longitude == lon)
-            )
-        )
-
     def upsert_location(self, location: Location) -> str:
         return self._locations.upsert(
             location.to_dict(), self._query.name == location.name
@@ -121,6 +114,7 @@ class SharedDB(DatabaseManager):
 
             if distance < closest_distance:
                 closest_location = Location.from_dict(item)
+                closest_distance = distance
 
         return closest_location
 

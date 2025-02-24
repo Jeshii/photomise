@@ -2,7 +2,6 @@ import os
 from typing import List
 
 import pendulum
-from InquirerPy import inquirer
 from tinydb.queries import Query
 from tinydb.table import Document
 
@@ -159,7 +158,10 @@ class ProjectDB(DatabaseManager):
         return events
 
     def same_event(
-        self, date: pendulum.DateTime, location: str, max_time_delta_in_hours: int = 8
+        self,
+        date: pendulum.DateTime,
+        location: Location,
+        max_time_delta_in_hours: int = 8,
     ):
         """
         Check if an event exists in the database with the same location and within a certain time delta.
@@ -177,10 +179,10 @@ class ProjectDB(DatabaseManager):
             db_date = pendulum.from_timestamp(event.date)
             time_delta = date.diff(db_date).in_hours()
 
-            if time_delta < max_time_delta_in_hours and event.location == location.name:
-                inquirer.confirm(f"Event: {event}").execute()
+            if time_delta < max_time_delta_in_hours and (
+                event.location == location.name or event.location == location._name
+            ):
                 return event, True
-        inquirer.confirm(f"Date: {date}").execute()
         return date, False
 
     def is_event(self, date: pendulum.DateTime):
@@ -278,7 +280,10 @@ class ProjectDB(DatabaseManager):
 
         from_db = self._photos.get(self._query.path == path)
         if not from_db:
-            return False
+            return Photo(
+                path=path,
+                quality=self.settings.get("quality", 80),
+            )
 
         return Photo.from_dict(from_db)
 

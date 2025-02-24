@@ -27,7 +27,6 @@ from photomise.utilities.project import (
     get_non_hidden_files,
     handle_duplicate_events,
     item_duplicate,
-    sanitize_text,
     set_project,
 )
 from photomise.utilities.shared import make_min_max_prompt, spellcheck
@@ -284,6 +283,23 @@ def locations(
                 ).execute()
                 if entered_date:
                     date_object = pendulum.parse(entered_date, strict=False)
+                    if inquirer.confirm(
+                        f"Save {date_object.format('YYYY-MM-DD HH:mm:ss')} to the exif data?"
+                    ).execute():
+                        # Save to exif data
+                        exif_dict = piexif.load(file_path)
+                        exif_dict["Exif"] = {
+                            piexif.ExifIFD.DateTimeOriginal: date_object.format(
+                                "YYYY:MM:DD HH:mm:ss"
+                            )
+                        }
+                        exif_bytes = piexif.dump(exif_dict)
+                        piexif.insert(exif_bytes, file_path)
+                        console.print("Date saved to exif data.")
+                    else:
+                        console.print("Only using for location finding...")
+                else:
+                    console.print("Skipping...")
 
         if not date_object:
             logging.warning("No date found for this photo. Skipping...")
@@ -292,10 +308,10 @@ def locations(
         if lat and lon:
             location = gdb.find_location(lat, lon)
             if location:
-                console.print(f"Location: {location.name}")
-                console.print(f"Photo Latitude: {lat}, Longitude: {lon}")
+                console.print(f"Location Name: {location.name}")
+                console.print(f"Photo Geodata: Latitude: {lat}, Longitude: {lon}")
                 console.print(
-                    f"Location Latitude: {location.latitude}, Longitude: {location.longitude}"
+                    f"Location Geodata: Latitude: {location.latitude}, Longitude: {location.longitude}"
                 )
             else:
                 if link:
@@ -307,9 +323,12 @@ def locations(
                         f"[link={link}{encoded_lat},{encoded_lon}]Helper link[/link]"
                     )
                 location_name = inquirer.text(
-                    f"Please enter a location name for {lat},{lon}"
+                    f"Please enter a location name for {lat},{lon}",
+                    validate=lambda x: len(x.strip()) > 0,
+                    invalid_message="Location name cannot be empty",
                 ).execute()
-                location = Location(name=location_name, latitude=lat, longitude=lon)
+                location = Location(latitude=lat, longitude=lon)
+                location.name = location_name
                 result = gdb.upsert_location(location)
                 logger.info(f"Location upserted: {result}")
         else:
@@ -341,20 +360,22 @@ def locations(
                     console.print("Invalid longitude format.")
                     continue
 
-                location = gdb.get_location_coord(lat, lon)
+                location = gdb.find_location(lat, lon)
                 if location:
                     console.print(f"Location: {location.name}")
                 else:
                     if link:
                         console.print(f"[link={link}{lat},{lon}]Helper link[/link]")
-                    location_name = inquirer.text(
-                        f"Please enter a location name for {lat},{lon}"
-                    ).execute()
                     location = Location(
                         latitude=lat,
-                        name=location_name,
                         longitude=lon,
                     )
+                    location_name = inquirer.text(
+                        f"Please enter a location name for {lat},{lon}",
+                        validate=lambda x: len(x.strip()) > 0,
+                        invalid_message="Location name cannot be empty",
+                    ).execute()
+                    location.name = location_name
                     result = gdb.upsert_location(location)
                     logger.info(f"Location upserted: {result}")
                 # add exif info to file
@@ -371,8 +392,10 @@ def locations(
                 console.print("Skipping...")
                 continue
 
-        console.print(f"Taken: {date_object.format('YYYY-MM-DD HH:MM A')}")
+        console.print(f"Taken: {date_object.format('YYYY-MM-DD HH:mm:ss')}")
         event, event_same = pdb.same_event(date_object, location)
+        logger.debug(f"[{project}] Event: {event}")
+        logger.debug(f"[{project}] Event Same? {event_same}")
         if not event_same:
             event = Event(
                 date=date_object.timestamp(),
@@ -384,8 +407,7 @@ def locations(
             continue
 
         if pdb.settings.get("auto_event"):
-            location_name_sanitized = sanitize_text(location.name)
-            event.name = f"{pendulum.from_timestamp(event.date).format('YYYYMMDD')}-{location_name_sanitized}"
+            event.name = f"{pendulum.from_timestamp(event.date).format('YYYYMMDD')}-{location._name}"
         else:
             event.name = inquirer.text(
                 f"Please name this event from {event.date.format('YYYY-MM-DD')} at {location.name}"

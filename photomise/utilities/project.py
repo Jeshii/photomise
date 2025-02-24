@@ -1,5 +1,4 @@
 import os
-from urllib.parse import quote
 
 import pendulum
 import typer
@@ -8,6 +7,7 @@ from InquirerPy import inquirer
 from photomise.database.project import ProjectDB
 from photomise.database.shared import SharedDB
 from photomise.utilities.event import Event
+from photomise.utilities.location import sanitize_text
 from photomise.utilities.logging import setup_logging
 
 logging, console = setup_logging()
@@ -26,10 +26,6 @@ def convert_to_absolute_path(relative_path: str, project_path: str) -> str:
     if os.path.isabs(relative_path):
         return relative_path
     return os.path.join(project_path, relative_path)
-
-
-def sanitize_text(text: str = "") -> str:
-    return quote(text.strip().replace(" ", "_"))
 
 
 def item_duplicate(pdb, gdb, date_object, lat, lon):

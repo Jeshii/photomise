@@ -14,7 +14,6 @@ pillow = "*"
 tinydb = "*"
 typer = "*"
 pillow-heif = "*"
-photomise = {file = ".", editable = true}
 pyspellchecker = "*"
 
 [dev-packages]
