@@ -12,7 +12,7 @@ from photomise.utilities.location import Location
 from photomise.utilities.logging import setup_logging
 from photomise.utilities.photo import Photo
 
-logging, console = setup_logging()
+logger, console = setup_logging()
 
 
 class ProjectDB(DatabaseManager):
@@ -120,7 +120,7 @@ class ProjectDB(DatabaseManager):
         Returns:
             dict: Event data.
         """
-        logging.info(f"[{self.project_name}] Getting event: {event_name}")
+        logger.info(f"[{self.project_name}] Getting event: {event_name}")
         return Event.from_dict(self._events.get(self._query.name == event_name))
 
     def get_events(self, event_names: list = []):
@@ -211,8 +211,46 @@ class ProjectDB(DatabaseManager):
         if path:
             event.photos = event.photos + [path]
 
-        updated = self._events.upsert(event.to_dict(), self._query.event == event.name)
+        logger.debug(f"Upserting event: {event.name} with date {event.date}")
+        existing = self._events.get(
+            (self._query.name == event.name) & (self._query.date == event.date)
+        )
+        logger.debug(f"Found existing event: {existing}")
+
+        updated = self._events.upsert(
+            event.to_dict(),
+            self._query.name == event.name,
+        )
         return updated
+
+    def remove_event(self, event: Event):
+        """
+        Remove an event from the database.
+
+        Args:
+            event (dict): Event data.
+        """
+        self._events.remove(self._query.name == event.name)
+
+    def get_photos_without_event(self):
+        """
+        Get photos that are not associated with an event.
+
+        Returns:
+            list: List of photos.
+        """
+
+        all_event_photos = []
+        no_event_photos = []
+        for event in self._events.all():
+            all_event_photos.extend(event["photos"])
+
+        for photo in self._photos.all():
+            if photo["path"] not in all_event_photos:
+                print(f"Photo {photo['path']} not in any event")
+                no_event_photos.append(Photo.from_dict(photo))
+
+        return no_event_photos
 
     ### NOT WORKING when called from handle_duplicate_events()
     def remove_photo_from_event(
@@ -383,7 +421,7 @@ class ProjectDB(DatabaseManager):
         """
         rankings = self._rankings.search(self._query.event == event)
         # sort rankings by rank
-        logging.debug(f"Rankings from database for {event} from DB: {rankings}")
+        logger.debug(f"Rankings from database for {event} from DB: {rankings}")
         rankings = sorted(rankings, key=lambda x: x["rank"])
         return rankings
 
@@ -398,7 +436,7 @@ class ProjectDB(DatabaseManager):
             int: Rank of the photo.
         """
         rankings = self._rankings.get(self._query.path == path)
-        logging.debug(f"Rankings from database for {path}: {rankings}")
+        logger.debug(f"Rankings from database for {path}: {rankings}")
         return rankings.get("rank", 0) if rankings else 0
 
     def upsert_rankings(self, rankings: dict):

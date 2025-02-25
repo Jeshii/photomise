@@ -82,7 +82,7 @@ def images(
         logger.debug(f"[{project}] Photo Record: {photo_record}")
         logger.debug(f"[{project}] View flag: {view}")
         logger.debug(f"[{project}] All flag: {all}")
-        if all or (view and not photo_record):
+        if all or view:
             if not photo_record:
                 photo_record = Photo(
                     path=file_path, quality=pdb.settings.get("quality", 80)
@@ -91,6 +91,7 @@ def images(
                 try:
                     result, error = photo_record.compress_image(
                         show=True,
+                        project_path=main_path,
                     )
                     if error is not None or not result:
                         logging.error(f"Error: {error}")
@@ -178,8 +179,8 @@ def images(
 
         if (pdb.settings.get("description") and not default_description) or all:
             description = inquirer.text(
-                message="Enter a description for visually impaired users about this image:",
-                default=default_description,
+                message="Enter alt text describing this image:",
+                default="" if default_description is None else str(default_description),
             ).execute()
 
             if check_spelling:
@@ -190,7 +191,7 @@ def images(
         if (pdb.settings.get("flavor") and not default_flavor) or all:
             flavor = inquirer.text(
                 message="Enter flavor text for this image:",
-                default=default_flavor,
+                default="" if default_flavor is None else str(default_flavor),
             ).execute()
 
             if check_spelling:
@@ -248,6 +249,9 @@ def locations(
         file_path = f"{dir}/{file}"
         relative_path = convert_to_relative_path(file_path, main_path)
 
+        console.print()
+        console.print(f"Checking {file_path}")
+
         # Check for duplicates
         duplicate_events = pdb.find_events_with_photo(relative_path)
         if len(duplicate_events) > 1:
@@ -270,10 +274,9 @@ def locations(
         if view:
             _ = photo_record.compress_image(
                 show=True,
+                project_path=main_path,
             )
 
-        console.print()
-        console.print(f"Checking {file_path}")
         if not date_object:
             if inquirer.confirm(
                 "No date found in EXIF data. Would you like to add one?"
@@ -533,6 +536,9 @@ def prune(
     ),
     event_name: str = typer.Option(None, "--event", "-e", help="Event name"),
     all: bool = typer.Option(False, "--all", "-a", help="Review all photos"),
+    no_event: bool = typer.Option(
+        False, "--no-event", "-n", help="Prune photos not associated with an event"
+    ),
 ):
     """Remove assets from events."""
 
@@ -543,9 +549,9 @@ def prune(
     if not events:
         logging.fatal("No events found. Please run photomise first.")
         typer.Exit(1)
-    if not all and not event_name:
+    if not all and not event_name and not no_event:
         event_name = inquirer.select(
-            message="Choose an event to rank", choices=events.keys()
+            message="Choose an event to prune", choices=events.keys()
         ).execute()
 
     if not all:
@@ -554,23 +560,33 @@ def prune(
         except KeyError:
             logging.fatal("Event not found.")
             typer.Exit(1)
+
+    if no_event:
+        photos = pdb.get_photos_without_event()
+
     for event_name, event in events.items():
         logging.debug(f"[{project}] Event: {event}")
-        try:
-            photos = event["photos"]
-        except KeyError:
-            logging.fatal("Event not found.")
-            typer.Exit(1)
+        if all:
+            console.print(f"{event_name}:")
+        if not no_event:
+            try:
+                photos = event.photos
+            except KeyError:
+                logging.fatal("Event not found.")
+                typer.Exit(1)
         console.print(f"There are {len(photos)} photos in this event.")
         if view:
-            for photo_path in photos:
-                photo_record = pdb.get_photo(photo_path)
+            for photo in photos:
+                print(photo)
+                photo_record = pdb.get_photo(
+                    convert_to_absolute_path(photo.path, main_path)
+                )
                 photo_record.compress_image(
                     show=True,
                 )
         for photo_record in photos:
             if inquirer.confirm(
-                message=f"Would you like to remove this photo - {convert_to_absolute_path(photo_record, main_path)}:"
+                message=f"Would you like to remove this photo - {convert_to_absolute_path(photo_record.path, main_path)}:"
             ).execute():
 
                 if inquirer.confirm(

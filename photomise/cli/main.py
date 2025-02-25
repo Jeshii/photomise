@@ -32,7 +32,7 @@ def init(
         False,
         "--description",
         "-d",
-        prompt="Provide descriptions for visually impaired users",
+        prompt="Provide alt text",
     ),
     flavor: bool = typer.Option(
         False, "--flavor", "-f", prompt="Provide flavor text for assets"

@@ -6,6 +6,8 @@ import piexif
 import pillow_heif
 from PIL import Image, ImageEnhance
 
+from photomise.utilities import project
+
 
 @dataclass
 class Photo:
@@ -40,6 +42,7 @@ class Photo:
 
     def compress_image(
         self,
+        project_path: str,
         show: bool = False,
         max_dimension: int = 1200,
     ) -> tuple[BytesIO, Exception]:
@@ -58,9 +61,11 @@ class Photo:
         Raises:
             Exception: If there's an error during image processing, prints error message.
         """
+
+        absolute_path = project.convert_to_absolute_path(self.path, project_path)
         try:
             if self.path.lower().endswith(".heic"):
-                heif_file = pillow_heif.read_heif(self.path)
+                heif_file = pillow_heif.read_heif(absolute_path)
                 image = Image.frombytes(
                     heif_file.mode,
                     heif_file.size,
@@ -70,7 +75,7 @@ class Photo:
                     heif_file.stride,
                 )
             else:
-                image = Image.open(self.path)
+                image = Image.open(absolute_path)
 
             # Convert HEIC to RGB mode if necessary
             if image.mode != "RGB":

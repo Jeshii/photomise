@@ -10,7 +10,7 @@ from photomise.utilities.event import Event
 from photomise.utilities.location import sanitize_text
 from photomise.utilities.logging import setup_logging
 
-logging, console = setup_logging()
+logger, console = setup_logging()
 
 
 def convert_to_relative_path(file_path: str, project_path: str) -> str:
@@ -48,20 +48,20 @@ def set_project(
         try:
             gdb = SharedDB()
         except Exception as e:
-            logging.fatal(f"Error: {e}")
+            logger.fatal(f"Error: {e}")
             typer.Exit(1)
 
         projects = gdb.projects
 
         if not projects:
-            logging.fatal(
+            logger.fatal(
                 "No projects found in global database - please run photomise init."
             )
             exit(1)
 
         sanitized_project_name = sanitize_text(project.lower())
         if sanitized_project_name not in projects:
-            logging.fatal(
+            logger.fatal(
                 f"Project '{project}' not found in global database - please run photomise init."
             )
             exit(1)
@@ -94,7 +94,7 @@ def set_project_settings(pdb: ProjectDB) -> None:
         default=str(settings.get("quality")),
     ).execute()
     settings["description"] = inquirer.confirm(
-        message="Would you like to provide descriptions for visually impaired users?",
+        message="Would you like to provide alt text?",
         default=settings.get("description"),
     ).execute()
     settings["flavor"] = inquirer.confirm(
@@ -111,7 +111,7 @@ def set_project_settings(pdb: ProjectDB) -> None:
         },
         document=setting_doc,
     )
-    logging.debug(f"Updated: {updated}")
+    logger.debug(f"Updated: {updated}")
     return settings
 
 
@@ -145,27 +145,47 @@ def handle_duplicate_events(
     Returns:
         None
     """
-
-    console.print(
-        f"\n[yellow]Warning:[/yellow] Photo {photo_path} appears in multiple events:"
-    )
+    all_same = True
     for idx, event in enumerate(events, 1):
-        console.print(
-            f"{idx}. {event.name} ({pendulum.from_timestamp(event.date).format('YYYY-MM-DD')})"
+        if event.name == events[0].name:
+            continue
+        else:
+            all_same = False
+
+    if all_same:
+        # If all events are the same, merge them
+        master_event = events[0]
+        for event in events[1:]:
+            # prevent duplicate photos
+            for photo in event.photos:
+                if photo not in master_event.photos:
+                    master_event.photos.append(photo)
+            pdb.remove_event(event)
+        pdb.upsert_event(master_event)
+        logger.warning(
+            f"Photo {photo_path} appeared in multiple events and thus the events were merged."
         )
+    else:
+        console.print(
+            f"\n[yellow]Warning:[/yellow] Photo {photo_path} appears in multiple events..."
+        )
+        for idx, event in enumerate(events, 1):
+            console.print(
+                f"{idx}. {event.name} ({pendulum.from_timestamp(event.date).format('YYYY-MM-DD')})"
+            )
 
-    keep_idx = inquirer.select(
-        message="Which event should keep this photo?",
-        choices=[str(i) for i in range(1, len(events) + 1)],
-    ).execute()
+        keep_idx = inquirer.select(
+            message="Which event should keep this photo?",
+            choices=[str(i) for i in range(1, len(events) + 1)],
+        ).execute()
 
-    if (
-        keep_idx is None
-        or not keep_idx.isdigit()
-        or int(keep_idx) < 1
-        or int(keep_idx) > len(events)
-    ):
-        logging.error("Invalid selection. No event will be updated.")
-        return
+        if (
+            keep_idx is None
+            or not keep_idx.isdigit()
+            or int(keep_idx) < 1
+            or int(keep_idx) > len(events)
+        ):
+            logger.error("Invalid selection. No event will be updated.")
+            return
 
-    pdb.remove_photo_from_event(events, photo_path, int(keep_idx))
+        pdb.remove_photo_from_event(events, photo_path, int(keep_idx))
