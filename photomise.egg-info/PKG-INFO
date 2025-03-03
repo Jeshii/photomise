@@ -1,4 +1,6 @@
 Metadata-Version: 2.2
 Name: photomise
 Version: 0.1.0
+Requires-Python: >=3.10
 License-File: LICENSE
+Dynamic: requires-python

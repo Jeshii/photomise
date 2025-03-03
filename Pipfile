@@ -20,6 +20,7 @@ pyspellchecker = "*"
 pytest = "*"
 black = "*"
 isort = "*"
+ruff = "*"
 
 [requires]
 python_version = "3.12"

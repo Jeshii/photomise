@@ -9,4 +9,5 @@ setup(
             "photomise=photomise.cli.main:app",
         ],
     },
+    python_requires=">=3.10",
 )
