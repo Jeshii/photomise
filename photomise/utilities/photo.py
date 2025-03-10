@@ -40,7 +40,7 @@ class Photo:
             "flavor": self.flavor,
         }
 
-    def has_non_defaults(
+    def has_modifications(
         self,
         default_quality: int = 80,
     ) -> bool:

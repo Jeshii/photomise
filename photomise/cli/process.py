@@ -2,6 +2,7 @@
 
 import logging
 import os
+import time
 
 import pendulum
 import piexif
@@ -108,105 +109,107 @@ def images(
         logger.debug(f"[{project}] Photo Record: {photo_record}")
         logger.debug(f"[{project}] View flag: {view}")
         logger.debug(f"[{project}] All flag: {all}")
-        if all or view:
-            if not photo_record:
-                photo_record = Photo(
-                    path=file_path, quality=pdb.settings.get("quality", 80)
-                )
-            if (
-                all
-                or photo_record.has_non_defaults(
+        if not photo_record:
+            photo_record = Photo(
+                path=file_path, quality=pdb.settings.get("quality", 80)
+            )
+
+        if all or (
+            (
+                not photo_record.has_modifications(
                     default_quality=pdb.settings.get("quality", 80),
                 )
                 or len(non_hidden_files) == 1
-            ):
-                while True:
-                    try:
-                        result, error = photo_record.compress_image(
-                            show=True,
-                            project_path=main_path,
-                        )
-                        if error is not None or not result:
-                            logging.error(f"Error: {error}")
-                            break
-                    except Exception as e:
-                        logging.error(f"Error: {e}")
-                        error = e
-                        break
-                    progress.stop()
-                    if inquirer.confirm(message="Does the image look okay?").execute():
-                        break
-                    else:
-                        photo_record.quality = inquirer.select(
-                            message="Choose a quality level",
-                            choices=[10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
-                            default=photo_record.quality,
-                        ).execute()
-
-                        photo_record.rotation = inquirer.select(
-                            message="Choose a rotation angle",
-                            choices=[0, 90, 180, 270],
-                            default=photo_record.rotation,
-                        ).execute()
-
-                        filter_choices = ["None"] + [
-                            filter["name"] for filter in gdb.get_filters_all()
-                        ]
-                        filter_choices.append("Custom")
-
-                        filter_search_params = {
-                            "brightness": photo_record.brightness,
-                            "contrast": photo_record.contrast,
-                            "color": photo_record.color,
-                            "sharpness": photo_record.sharpness,
-                        }
-
-                        filter_to_apply = inquirer.select(
-                            message="Choose a filter",
-                            choices=filter_choices,
-                            default=gdb.get_filter_from_values(filter_search_params),
-                        ).execute()
-
-                        match filter_to_apply:
-                            case "Custom":
-                                photo_record.brightness = make_min_max_prompt(
-                                    "Adjust brightness",
-                                    photo_record.brightness,
-                                )
-                                photo_record.contrast = make_min_max_prompt(
-                                    "Adjust contrast",
-                                    photo_record.contrast,
-                                )
-                                photo_record.color = make_min_max_prompt(
-                                    "Adjust color",
-                                    photo_record.color,
-                                )
-                                photo_record.sharpness = make_min_max_prompt(
-                                    "Adjust sharpness",
-                                    photo_record.sharpness,
-                                )
-                            case "None":
-                                photo_record.brightness = 1.0
-                                photo_record.contrast = 1.0
-                                photo_record.color = 1.0
-                                photo_record.sharpness = 1.0
-                            case _:
-                                filter = gdb.get_filter(filter_to_apply)
-                                photo_record.brightness = filter.get("brightness", 1.0)
-                                photo_record.contrast = filter.get("contrast", 1.0)
-                                photo_record.color = filter.get("color", 1.0)
-                                photo_record.sharpness = filter.get("sharpness", 1.0)
-                    progress.start()
-                    logging.debug(f"[{project}] Photo info: {photo_record}")
-
-            if error:
-                continue
-
-        if not photo_record:
-            photo_record = Photo(
-                path=relative_path, quality=pdb.settings.get("quality", 80)
             )
+            and view
+        ):
+            while True:
+                try:
+                    result, error = photo_record.compress_image(
+                        show=True,
+                        project_path=main_path,
+                    )
+                    if error is not None or not result:
+                        logging.error(f"Error: {error}")
+                        break
+                except Exception as e:
+                    logging.error(f"Error: {e}")
+                    error = e
+                    break
+                progress.stop()
+                if inquirer.confirm(message="Does the image look okay?").execute():
+                    break
+                else:
+                    photo_record.quality = inquirer.select(
+                        message="Choose a quality level",
+                        choices=[10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
+                        default=photo_record.quality,
+                    ).execute()
 
+                    photo_record.rotation = inquirer.select(
+                        message="Choose a rotation angle",
+                        choices=[0, 90, 180, 270],
+                        default=photo_record.rotation,
+                    ).execute()
+
+                    filter_choices = ["None"] + [
+                        filter["name"] for filter in gdb.get_filters_all()
+                    ]
+                    filter_choices.append("Custom")
+
+                    filter_search_params = {
+                        "brightness": photo_record.brightness,
+                        "contrast": photo_record.contrast,
+                        "color": photo_record.color,
+                        "sharpness": photo_record.sharpness,
+                    }
+
+                    filter_to_apply = inquirer.select(
+                        message="Choose a filter",
+                        choices=filter_choices,
+                        default=gdb.get_filter_from_values(filter_search_params),
+                    ).execute()
+
+                    match filter_to_apply:
+                        case "Custom":
+                            photo_record.brightness = make_min_max_prompt(
+                                "Adjust brightness",
+                                photo_record.brightness,
+                            )
+                            photo_record.contrast = make_min_max_prompt(
+                                "Adjust contrast",
+                                photo_record.contrast,
+                            )
+                            photo_record.color = make_min_max_prompt(
+                                "Adjust color",
+                                photo_record.color,
+                            )
+                            photo_record.sharpness = make_min_max_prompt(
+                                "Adjust sharpness",
+                                photo_record.sharpness,
+                            )
+                        case "None":
+                            photo_record.brightness = 1.0
+                            photo_record.contrast = 1.0
+                            photo_record.color = 1.0
+                            photo_record.sharpness = 1.0
+                        case _:
+                            filter = gdb.get_filter(filter_to_apply)
+                            photo_record.brightness = filter.get("brightness", 1.0)
+                            photo_record.contrast = filter.get("contrast", 1.0)
+                            photo_record.color = filter.get("color", 1.0)
+                            photo_record.sharpness = filter.get("sharpness", 1.0)
+                progress.start()
+                logging.debug(f"[{project}] Photo info: {photo_record}")
+
+        if error:
+            progress.start()
+            progress.update(task, description=f"Error processing [bold]{file_path}")
+            logger.error(f"Error processing {file_path}: {error}")
+            time.sleep(5)
+            continue
+
+        progress.update(task, description=f"Processing [bold]{file_path}")
         default_description = photo_record.description
         default_flavor = photo_record.flavor
 
@@ -240,6 +243,7 @@ def images(
         logger.debug(f"[{project}] Saving photo record: {photo_record}")
         updated = pdb.upsert_photo(photo_record)
 
+        progress.update(task, description=f"Finished processing [bold]{file_path}")
         logging.debug(f"[{project}] Photo info saved: {updated}")
 
     progress.stop()
