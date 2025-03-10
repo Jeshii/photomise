@@ -16,8 +16,6 @@ def edit(
     contrast: float = typer.Option(None, "--contrast", "-con", help="Contrast"),
     color: float = typer.Option(None, "--color", "-col", help="Color"),
     sharpness: float = typer.Option(None, "--sharpness", "-s", help="Sharpness"),
-    rename: bool = typer.Option(False, "--rename", "-r", help="Rename filter"),
-    delete: bool = typer.Option(False, "--delete", "-d", help="Delete filter"),
 ):
     """Edit filter settings."""
     try:
@@ -76,6 +74,31 @@ def delete(
         ).execute()
     gdb.delete_filter(filter_name)
     return
+
+
+@app.command()
+def rename(
+    old_name: str = typer.Argument(None, help="Old filter name"),
+    new_name: str = typer.Argument(None, help="New filter name"),
+):
+    """Rename a filter."""
+    try:
+        gdb = SharedDB()
+    except Exception as e:
+        logging.fatal(f"Error: {e}")
+        return
+    if not old_name:
+        old_name = inquirer.select(
+            message="Select a filter to rename:",
+            choices=[filter["name"] for filter in gdb.get_filters_all()],
+        ).execute()
+    if not new_name:
+        new_name = inquirer.text(message="Enter new name:").execute()
+    new_name_confirmation = gdb.rename_filter(old_name, new_name)
+    if not new_name_confirmation:
+        logging.error(f"Unable to rename filter {old_name}.")
+    else:
+        logging.info(f"Filter {old_name} renamed to {new_name_confirmation}.")
 
 
 @app.command()

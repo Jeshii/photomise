@@ -61,6 +61,16 @@ class SharedDB(DatabaseManager):
         else:
             return False
 
+    def rename_filter(self, old_name: str, new_name: str) -> str:
+        updated = self._filters.update(
+            {"name": new_name},
+            self._query.name == old_name,
+        )
+        if updated:
+            return new_name
+        else:
+            return False
+
     def upsert_project(self, params: dict) -> str:
         updated = self._filters.upsert(
             {
