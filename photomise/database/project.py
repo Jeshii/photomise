@@ -325,7 +325,7 @@ class ProjectDB(DatabaseManager):
 
         return Photo.from_dict(from_db)
 
-    def get_photos_by_event(self, event: str):
+    def get_photos_by_event(self, event: str) -> list[Photo]:
         """
         Get all the photos for a specific event.
 
@@ -338,29 +338,29 @@ class ProjectDB(DatabaseManager):
         photos = []
         for photo in self._photos.all():
             if event in photo.get("events", []):
-                photos.append(photo)
+                photos.append(Photo.from_dict(photo))
         return photos
 
-    def upsert_photo(self, photo: Photo) -> List[int]:
+    def upsert_photo(self, photo: Photo) -> list[int]:
         """
         Update or insert a photo into the database.
 
         Args:
-            photo (dict): Photo data.
+            photo (Photo): Photo data.
 
         Returns:
             List[int]: Document IDs that were updated/inserted.
         """
         return self._photos.upsert(photo.to_dict(), self._query.path == photo.path)
 
-    def remove_photo(self, photo: dict):
+    def remove_photo(self, photo: Photo):
         """
         Remove a photo from the database.
 
         Args:
             photo (dict): Photo data.
         """
-        self._photos.remove(self._query.path == photo["path"])
+        self._photos.remove(self._query.path == photo.path)
 
     # Posts table methods
     def count_posts(self):

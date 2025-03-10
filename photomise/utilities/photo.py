@@ -40,6 +40,34 @@ class Photo:
             "flavor": self.flavor,
         }
 
+    def is_processed(self) -> bool:
+        """
+        Check if a photo has been processed.
+
+        Args:
+            path (str): Path to the photo.
+
+        Returns:
+            bool: True if the photo has been processed, False otherwise.
+        """
+        if self.rotation != 0:
+            return True
+        if self.quality != 80:
+            return True
+        if self.brightness != 1.0:
+            return True
+        if self.contrast != 1.0:
+            return True
+        if self.sharpness != 1.0:
+            return True
+        if self.color != 1.0:
+            return True
+        if self.description != "":
+            return True
+        if self.flavor != "":
+            return True
+        return False
+
     def compress_image(
         self,
         project_path: str,
