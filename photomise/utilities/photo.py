@@ -40,19 +40,22 @@ class Photo:
             "flavor": self.flavor,
         }
 
-    def is_processed(self) -> bool:
+    def has_non_defaults(
+        self,
+        default_quality: int = 80,
+    ) -> bool:
         """
         Check if a photo has been processed.
 
         Args:
-            path (str): Path to the photo.
+            default_quality (int): The default quality value to compare against.
 
         Returns:
             bool: True if the photo has been processed, False otherwise.
         """
         if self.rotation != 0:
             return True
-        if self.quality != 80:
+        if self.quality != default_quality:
             return True
         if self.brightness != 1.0:
             return True
@@ -61,10 +64,6 @@ class Photo:
         if self.sharpness != 1.0:
             return True
         if self.color != 1.0:
-            return True
-        if self.description != "":
-            return True
-        if self.flavor != "":
             return True
         return False
 

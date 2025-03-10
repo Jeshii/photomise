@@ -7,6 +7,7 @@ import pendulum
 import piexif
 import typer
 from InquirerPy import inquirer
+from rich.progress import Progress
 from spellchecker import SpellChecker
 
 from photomise.database.shared import SharedDB
@@ -41,13 +42,19 @@ logger, console = setup_logging()
 def images(
     project: str = typer.Argument(..., help="Project name"),
     view: bool = typer.Option(
-        False, "--view", "-v", help="View files before processing"
+        False, "--view", "-v", help="View files during processing"
     ),
     all: bool = typer.Option(
         False,
         "--all",
         "-a",
-        help="Process all files whether they've been processed previously or not",
+        help="Process and view all files whether they've been processed previously or not",
+    ),
+    file: str = typer.Option(
+        None,
+        "--file",
+        "-f",
+        help="Process a specific file",
     ),
     check_spelling: bool = typer.Option(
         False, "--spellcheck", "-s", help="Check spelling of text"
@@ -61,7 +68,15 @@ def images(
     gdb = SharedDB()
     photos_path = f"{main_path}/assets"
 
-    non_hidden_files = list(get_non_hidden_files(photos_path))
+    if file:
+        non_hidden_files = [
+            (
+                os.path.dirname(f"{photos_path}/{file}"),
+                os.path.basename(f"{photos_path}/{file}"),
+            )
+        ]
+    else:
+        non_hidden_files = list(get_non_hidden_files(photos_path))
 
     if non_hidden_files == [(None, None)]:
         logging.fatal(
@@ -69,13 +84,24 @@ def images(
         )
         typer.Exit(1)
 
+    console.print(f"Found {len(non_hidden_files)} files in {photos_path} to process.")
+
+    progress = Progress(
+        "[progress.description]{task.description}",
+        "[progress.bar]{task.completed}/{task.total}",
+        console=console,
+        transient=False,
+    )
+    progress.start()
+    task = progress.add_task(
+        description="Processing images...", total=len(non_hidden_files)
+    )
     for dir, file in non_hidden_files:
         error = None
         file_path = f"{dir}/{file}"
+        progress.update(task, advance=1)
+        progress.update(task, description=f"Processing [bold]{file_path}")
         relative_path = convert_to_relative_path(file_path, main_path)
-
-        console.print()
-        console.print(f"[bold]Checking {file_path}[/bold]")
 
         photo_record = pdb.get_photo(relative_path)
 
@@ -87,7 +113,13 @@ def images(
                 photo_record = Photo(
                     path=file_path, quality=pdb.settings.get("quality", 80)
                 )
-            if all or not photo_record.is_processed():
+            if (
+                all
+                or photo_record.has_non_defaults(
+                    default_quality=pdb.settings.get("quality", 80),
+                )
+                or len(non_hidden_files) == 1
+            ):
                 while True:
                     try:
                         result, error = photo_record.compress_image(
@@ -101,7 +133,7 @@ def images(
                         logging.error(f"Error: {e}")
                         error = e
                         break
-
+                    progress.stop()
                     if inquirer.confirm(message="Does the image look okay?").execute():
                         break
                     else:
@@ -164,11 +196,11 @@ def images(
                                 photo_record.contrast = filter.get("contrast", 1.0)
                                 photo_record.color = filter.get("color", 1.0)
                                 photo_record.sharpness = filter.get("sharpness", 1.0)
-
+                    progress.start()
                     logging.debug(f"[{project}] Photo info: {photo_record}")
 
-        if error:
-            continue
+            if error:
+                continue
 
         if not photo_record:
             photo_record = Photo(
@@ -179,6 +211,7 @@ def images(
         default_flavor = photo_record.flavor
 
         if (pdb.settings.get("description") and not default_description) or all:
+            progress.stop()
             description = inquirer.text(
                 message="Enter alt text describing this image:",
                 default="" if default_description is None else str(default_description),
@@ -186,10 +219,11 @@ def images(
 
             if check_spelling:
                 description = spellcheck(description)
-
+            progress.start()
             photo_record.description = description
 
         if (pdb.settings.get("flavor") and not default_flavor) or all:
+            progress.stop()
             flavor = inquirer.text(
                 message="Enter flavor text for this image:",
                 default="" if default_flavor is None else str(default_flavor),
@@ -197,15 +231,18 @@ def images(
 
             if check_spelling:
                 flavor = spellcheck(flavor)
-
+            progress.start()
             photo_record.flavor = flavor
 
         photo_record.path = relative_path
 
+        progress.update(task, description=f"Saving [bold]{file_path}")
+        logger.debug(f"[{project}] Saving photo record: {photo_record}")
         updated = pdb.upsert_photo(photo_record)
 
         logging.debug(f"[{project}] Photo info saved: {updated}")
 
+    progress.stop()
     pdb.close()
     gdb.close()
 
