@@ -138,6 +138,7 @@ def images(
                     break
                 progress.stop()
                 if inquirer.confirm(message="Does the image look okay?").execute():
+                    progress.start()
                     break
                 else:
                     photo_record.quality = inquirer.select(
@@ -209,11 +210,10 @@ def images(
             time.sleep(5)
             continue
 
-        progress.update(task, description=f"Processing [bold]{file_path}")
         default_description = photo_record.description
         default_flavor = photo_record.flavor
 
-        if (pdb.settings.get("description") and not default_description) or all:
+        if pdb.settings.get("description") and (not default_description or all):
             progress.stop()
             description = inquirer.text(
                 message="Enter alt text describing this image:",
@@ -225,7 +225,7 @@ def images(
             progress.start()
             photo_record.description = description
 
-        if (pdb.settings.get("flavor") and not default_flavor) or all:
+        if pdb.settings.get("flavor") and (not default_flavor or all):
             progress.stop()
             flavor = inquirer.text(
                 message="Enter flavor text for this image:",
@@ -243,7 +243,7 @@ def images(
         logger.debug(f"[{project}] Saving photo record: {photo_record}")
         updated = pdb.upsert_photo(photo_record)
 
-        progress.update(task, description=f"Finished processing [bold]{file_path}")
+        progress.update(task, description=f"Saved [bold]{file_path}")
         logging.debug(f"[{project}] Photo info saved: {updated}")
 
     progress.stop()
