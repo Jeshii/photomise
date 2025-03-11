@@ -123,7 +123,7 @@ class ProjectDB(DatabaseManager):
         logger.info(f"[{self.project_name}] Getting event: {event_name}")
         return Event.from_dict(self._events.get(self._query.name == event_name))
 
-    def get_events(self, event_names: list = []):
+    def get_events(self, event_names: list = []) -> list[Event]:
         """
         Get some or all events from the database.
 
@@ -140,7 +140,7 @@ class ProjectDB(DatabaseManager):
                 events[event.name] = event
         return events
 
-    def get_events_without_bluesky_posted(self):
+    def get_events_without_bluesky_posted(self) -> list[Event]:
         """
         Get events that have not been posted to Bluesky.
 
@@ -152,9 +152,10 @@ class ProjectDB(DatabaseManager):
         for post in self._posts.all():
             if post["where"] == "Bluesky":
                 posted_events.append(post["event"])
-        for event in self._events.all():
-            if event["event"] not in posted_events:
-                events[event["event"]] = event
+        for document in self._events.all():
+            event = Event.from_dict(document)
+            if event.name not in posted_events:
+                events[event.name] = event
         return events
 
     def same_event(

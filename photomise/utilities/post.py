@@ -18,7 +18,11 @@ def get_bluesky_user(pdb: ProjectDB) -> str:
 
 def get_password_from_keyring(logger, user: str):
     logger.debug(f"Attempting to get password for {user}...")
-    password = keyring.get_password(constants.BLUESKY_SERVICE_NAME, user)
+    try:
+        password = keyring.get_password(constants.BLUESKY_SERVICE_NAME, user)
+    except Exception as e:
+        logger.debug(f"Keyring error: {e}")
+        password = None
     if password:
         return password
 
