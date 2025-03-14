@@ -82,7 +82,8 @@ def atprotocol(
     image_aspect_ratios = []
     photo_list = []
     logger.debug(f"Checking for photos in: {events[event_name]}")
-    if len(events[event_name]["photos"]) > 4:
+    event_to_post = events[event_name]
+    if len(event_to_post.photos) > 4:
         ranking = pdb.get_rankings_by_event(event_name)
         if not ranking:
             logger.fatal("Too many photos to post to Bluesky")
@@ -94,7 +95,7 @@ def atprotocol(
             if len(photo_list) >= 4:
                 break
     else:
-        photo_list = events[event_name]["photos"]
+        photo_list = event_to_post.photos
 
     for path in photo_list:
         full_path = convert_to_absolute_path(path, main_path)
@@ -117,21 +118,25 @@ def atprotocol(
             if not photo_entry.description:
                 photo_entry.description = f"{event_name}-{path}"
             try:
-                compressed_image = photo_entry.compress_image(
+                compressed_image, e = photo_entry.compress_image(
+                    project_path=main_path,
                     show=view,
                     max_dimension=max_dimension,
                 )
-
-                images.append(compressed_image)
-                image_alts.append(photo_entry.description)
-                flavors.append(photo_entry.flavor)
+                if not e:
+                    images.append(compressed_image)
+                    image_alts.append(photo_entry.description)
+                    flavors.append(photo_entry.flavor)
+                else:
+                    logger.fatal(f"Error compressing image: {e}")
+                    return
             except Exception as e:
                 logger.fatal(f"Error compressing image: {e}")
                 return
 
     if not text:
         flavor_text = "\n\n".join(filter(None, flavors))
-        text = f"{events[event_name]['location']} ({pendulum.from_timestamp(events[event_name]['date']).format('YYYY-MMM-DD')})"
+        text = f"{event_to_post.location} ({pendulum.from_timestamp(event_to_post.date).format('YYYY-MMM-DD')})"
         if flavor_text:
             text = f"{text}\n\n{flavor_text}"
 

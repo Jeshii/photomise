@@ -13,6 +13,7 @@ class SharedDB(DatabaseManager):
         super().__init__(SHARED_DB_PATH)
         self._locations = self.get_table("locations")
         self._filters = self.get_table("filters")
+        self._projects = self.get_table("projects")
 
     @property
     def projects(self):
@@ -72,13 +73,13 @@ class SharedDB(DatabaseManager):
             return False
 
     def upsert_project(self, params: dict) -> str:
-        updated = self._filters.upsert(
+        updated = self._projects.upsert(
             {
                 "name": params["name"],
-                "path": params["brightness"],
-                "contrast": params["contrast"],
-                "color": params["color"],
-                "sharpness": params["sharpness"],
+                "path": params["path"],
+                "description": params["description"],
+                "flavor": params["flavor"],
+                "tags": params["tags"],
             },
             self._query.name == params["name"],
         )

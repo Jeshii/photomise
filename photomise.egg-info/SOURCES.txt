@@ -1,5 +1,6 @@
 LICENSE
 README.md
+pyproject.toml
 setup.py
 photomise/__init__.py
 photomise.egg-info/PKG-INFO

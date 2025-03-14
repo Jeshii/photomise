@@ -37,6 +37,12 @@ def init(
     flavor: bool = typer.Option(
         False, "--flavor", "-f", prompt="Provide flavor text for assets"
     ),
+    tags: bool = typer.Option(
+        False,
+        "--tags",
+        "-t",
+        prompt="Provide tags for assets",
+    ),
 ):
     """Initialize a new project."""
     settings = {}
@@ -46,12 +52,17 @@ def init(
         logger.fatal(f"Error: {e}")
         typer.Exit(1)
 
-    projects = gdb.proejcts
+    projects = gdb.projects
 
     if project in projects.keys():
         logger.error(f"Project {project} already exists in global database.")
-        return
+        typer.Exit(1)
+
     logger.info(f"Adding {project} to global database.")
+
+    if not project_path:
+        logger.fatal("Project path not provided. Please provide a path to the project.")
+        typer.exit(1)
 
     project_path = fix_dir(project_path)
     if not os.path.exists(project_path):
@@ -63,17 +74,19 @@ def init(
     project = sanitize_text(project.lower())
     projects[project] = project_path
     gdb.upsert_project(project, project_path, description, flavor)
+
     pdb = get_project_db(project, project_path)
 
     settings = {
-        "project_name": project,
-        "project_path": projects[project],
-        "description": settings.get("description"),
-        "flavor": settings.get("flavor"),
+        "name": project,
+        "path": projects[project],
+        "description": description,
+        "flavor": flavor,
+        "tags": tags,
     }
-    pdb.upsert_settings(settings)
+    pdb.insert_settings(settings)
 
-    return pdb, projects[project]
+    logger.info(f"Project {project} initialized at {project_path}.")
 
 
 @app.callback()

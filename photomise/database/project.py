@@ -66,9 +66,19 @@ class ProjectDB(DatabaseManager):
         """
         return self._settings.all()[0] if self._settings.all() else {}
 
-    def upsert_settings(self, settings: dict):
+    def update_settings(self, settings: dict):
         """
-        Update or insert settings into the database.
+        Update settings into the database.
+
+        Args:
+            settings (dict): Settings data.
+
+        """
+        return self._settings.update(settings, self._query.doc_id == 1)
+
+    def insert_settings(self, settings: dict):
+        """
+        Insert settings into the database.
 
         Args:
             settings (dict): Settings data.
@@ -76,10 +86,10 @@ class ProjectDB(DatabaseManager):
         Returns:
             bool: True if the settings were updated, False if they were inserted.
         """
-        return self._settings.upsert(settings, self._query.doc_id == 1)
+        return self._settings.insert(settings)
 
     # Accounts table methods
-    def get_bluesky_user(self) -> Document | List[Document] | None:
+    def get_bluesky_user(self) -> str | None:
         """
         Get the Bluesky user from the database.
 
@@ -87,7 +97,11 @@ class ProjectDB(DatabaseManager):
             str: Bluesky username.
         """
         try:
-            return self._accounts.get(self._query.where == "Bluesky")
+            entry = self._accounts.get(self._query.where == "Bluesky")
+            if entry:
+                return entry["user"]
+            else:
+                return None
         except TypeError:
             return None
 
