@@ -64,7 +64,8 @@ def atprotocol(
         ).execute()
     else:
         random_event = rand.choice(list(events.values()))
-        event_name = random_event["event"]
+        event_name = random_event.name
+        logger.debug(f"[{project}] Random event chosen: {event_name}")
 
     password = get_password_from_keyring(logger, user)
     try:
