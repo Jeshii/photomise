@@ -32,6 +32,12 @@ def project(
         "-t",
         prompt="Provide tags for events",
     ),
+    event_radius_meters: int = typer.Option(
+        None, "--radius", "-r", help="Event grouping radius in meters"
+    ),
+    event_time_delta_hours: int = typer.Option(
+        None, "--time-delta", "-D", help="Max hours between photos in same event"
+    ),
 ):
     """Edit settings for an existing project."""
     project_settings = {}
@@ -63,6 +69,13 @@ def project(
         "flavor": flavor,
         "tags": tags,
     }
+
+    # Only include optional settings if provided
+    if event_radius_meters is not None:
+        project_settings["event_radius_meters"] = event_radius_meters
+    if event_time_delta_hours is not None:
+        project_settings["event_time_delta_hours"] = event_time_delta_hours
+
     result = pdb.update_settings(project_settings)
 
     logger.info(f"Settings for {project}: {result}")

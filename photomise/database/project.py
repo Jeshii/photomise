@@ -176,7 +176,7 @@ class ProjectDB(DatabaseManager):
         self,
         date: pendulum.DateTime,
         location: Location,
-        max_time_delta_in_hours: int = 8,
+        max_time_delta_in_hours: int = None,
     ):
         """
         Check if an event exists in the database with the same location and within a certain time delta.
@@ -189,15 +189,35 @@ class ProjectDB(DatabaseManager):
         Returns:
             tuple: Date of the event, event data, and True if the event exists, False otherwise.
         """
+        # get project settings for radius and time delta
+        settings = self.settings or {}
+        event_radius_meters = settings.get("event_radius_meters", 500)
+        event_radius_km = event_radius_meters / 1000.0
+        if max_time_delta_in_hours is None:
+            max_time_delta_in_hours = settings.get("event_time_delta_hours", 8)
+
+        from geopy.distance import great_circle
+
         for item in self._events.all():
             event = Event.from_dict(item)
             db_date = pendulum.from_timestamp(event.date)
             time_delta = date.diff(db_date).in_hours()
-
-            if time_delta < max_time_delta_in_hours and (
-                event.location == location.name or event.location == location._name
-            ):
-                return event, True
+            # check temporal proximity first
+            if time_delta < max_time_delta_in_hours:
+                # check spatial proximity between event coordinates and provided location
+                try:
+                    event_coords = (event.latitude, event.longitude)
+                    location_coords = (location.latitude, location.longitude)
+                    distance_km = great_circle(event_coords, location_coords).kilometers
+                    if distance_km <= event_radius_km:
+                        return event, True
+                except Exception:
+                    # fallback to name matching if coordinates missing
+                    if (
+                        event.location == location.name
+                        or event.location == location._name
+                    ):
+                        return event, True
         return date, False
 
     def is_event(self, date: pendulum.DateTime):
@@ -267,9 +287,7 @@ class ProjectDB(DatabaseManager):
 
         return no_event_photos
 
-    def remove_photo_from_event(
-        self, event: Event, photo_path: str
-    ) -> None:
+    def remove_photo_from_event(self, event: Event, photo_path: str) -> None:
         """
         Remove a photo from specified event.
 
@@ -277,13 +295,11 @@ class ProjectDB(DatabaseManager):
             events: List of events.
             photo_path: Path to the photo.
         """
-        
+
         print(f"Removing photo from {event.name}")
         photos = event.photos
         photos.remove(photo_path)
-        self._events.update(
-            {"photos": event.photos}, self._query.event == event.name
-        )
+        self._events.update({"photos": event.photos}, self._query.event == event.name)
 
     def find_events_with_photo(self, photo_path: str) -> list[Event]:
         """

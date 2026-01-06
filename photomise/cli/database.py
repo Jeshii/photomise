@@ -1,13 +1,17 @@
 import os
+import xml.etree.ElementTree as ET
 from json import dumps
+from xml.dom import minidom
 
+import pendulum
 import typer
 from rich.table import Table
 
 from photomise.database.shared import SharedDB
 from photomise.utilities.constants import LOG_DIR
+from photomise.utilities.event import Event
 from photomise.utilities.logging import setup_logging
-from photomise.utilities.project import set_project
+from photomise.utilities.project import convert_to_absolute_path, set_project
 from photomise.utilities.shared import format_file_size
 
 app = typer.Typer()
@@ -107,7 +111,72 @@ def stats(
                     table.add_row(db_name, metric.replace("_", " ").title(), str(value))
 
             console.print(table)
-
     except Exception as e:
         logger.fatal(f"Error: {e}")
         typer.Exit(1)
+
+
+@app.command("export-gpx")
+def export_gpx(
+    project: str = typer.Argument(..., help="Project name or path"),
+    event: str = typer.Option(
+        None, "--event", "-e", help="Specific event name to export"
+    ),
+    output: str = typer.Option(
+        ".", "--output", "-o", help="Output GPX file or directory"
+    ),
+):
+    """Export events as a GPX file. If `--event` is provided, export only that event."""
+
+    try:
+        pdb, project_path = set_project(project)
+    except Exception as e:
+        logger.fatal(f"Error: {e}")
+        raise typer.Exit(1)
+
+    # Gather events
+    if event:
+        ev = pdb.get_event(event)
+        if not ev:
+            logger.fatal(f"Event {event} not found in project {pdb.project_name}")
+            raise typer.Exit(1)
+        events = {ev.name: ev}
+    else:
+        events = pdb.get_events()
+
+    if not events:
+        logger.fatal("No events found to export.")
+        raise typer.Exit(1)
+
+    # Build GPX
+    gpx = ET.Element("gpx", version="1.1", creator="photomise")
+
+    for name, ev in events.items():
+        # Use waypoint for event
+        if ev.latitude and ev.longitude:
+            wpt = ET.SubElement(gpx, "wpt", lat=str(ev.latitude), lon=str(ev.longitude))
+            name_el = ET.SubElement(wpt, "name")
+            name_el.text = ev.name
+            time_el = ET.SubElement(wpt, "time")
+            try:
+                time_el.text = pendulum.from_timestamp(ev.date).to_iso8601_string()
+            except Exception:
+                time_el.text = str(ev.date)
+            desc_el = ET.SubElement(wpt, "desc")
+            desc_el.text = ev.location or ""
+
+    # Pretty print
+    rough_string = ET.tostring(gpx, "utf-8")
+    reparsed = minidom.parseString(rough_string)
+    pretty = reparsed.toprettyxml(indent="  ")
+
+    # Determine output path
+    if output.endswith(".gpx") or output.endswith(".GPX"):
+        out_file = output
+    else:
+        out_file = f"{output.rstrip('/')}/{pdb.project_name}.gpx"
+
+    with open(out_file, "w", encoding="utf-8") as fh:
+        fh.write(pretty)
+
+    console.print(f"Exported {len(events)} event(s) to {out_file}")

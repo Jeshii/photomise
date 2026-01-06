@@ -43,6 +43,15 @@ def init(
         "-t",
         prompt="Provide tags for assets",
     ),
+    event_radius_meters: int = typer.Option(
+        500, "--radius", "-r", help="Event radius in meters for grouping photos"
+    ),
+    event_time_delta_hours: int = typer.Option(
+        8,
+        "--time-delta",
+        "-D",
+        help="Max hours between photos to consider them part of the same event",
+    ),
 ):
     """Initialize a new project."""
     settings = {}
@@ -83,6 +92,8 @@ def init(
         "description": description,
         "flavor": flavor,
         "tags": tags,
+        "event_radius_meters": event_radius_meters,
+        "event_time_delta_hours": event_time_delta_hours,
     }
     pdb.insert_settings(settings)
 
