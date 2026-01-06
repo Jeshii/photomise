@@ -270,7 +270,7 @@ def locations(
 
     if non_hidden_files == [(None, None)]:
         logging.fatal(
-            "No files found in the project folder's photos directory, please add photos before running."
+            f"No files found in the project folder's photos directory ({photos_path}), please add photos before running."
         )
         typer.Exit(1)
 
@@ -441,16 +441,26 @@ def locations(
             console.print("This item appears to be a duplicate and will be skipped.")
             continue
 
-        if pdb.settings.get("auto_event"):
-            event.name = f"{pendulum.from_timestamp(event.date).format('YYYYMMDD')}-{location._name}"
-        else:
-            event.name = inquirer.text(
-                f"Please name this event from {pendulum.from_timestamp(event.date).format('YYYYMMDD')} at {location.name}"
-            ).execute()
+        if not event_same:
+            if pdb.settings.get("auto_event"):
+                event_name_date = (
+                    pendulum.from_timestamp(event.date)
+                    .in_tz(pendulum.local_timezone())
+                    .format("YYYYMMDD")
+                )
+                event.name = f"{event_name_date}-{location._name}"
+            else:
+                event_name_date = (
+                    pendulum.from_timestamp(event.date)
+                    .in_tz(pendulum.local_timezone())
+                    .format("YYYYMMDD")
+                )
+                event.name = inquirer.text(
+                    f"Please name this event from {event_name_date} at {location.name}"
+                ).execute()
 
         if event_same:
-            console.print("This event appears to be a duplicate and will be skipped.")
-            logging.debug(f"Event Name: {event.name}")
+            logging.info(f"This event appears to be {event.name}.")
             event = pdb.get_event(event.name)
             logging.debug(f"Event: {event}")
             if relative_path not in event.photos:

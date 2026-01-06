@@ -74,13 +74,7 @@ class SharedDB(DatabaseManager):
 
     def upsert_project(self, params: dict) -> str:
         updated = self._projects.upsert(
-            {
-                "name": params["name"],
-                "path": params["path"],
-                "description": params["description"],
-                "flavor": params["flavor"],
-                "tags": params["tags"],
-            },
+            params,
             self._query.name == params["name"],
         )
 

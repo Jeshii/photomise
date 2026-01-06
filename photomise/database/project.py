@@ -199,10 +199,21 @@ class ProjectDB(DatabaseManager):
 
         for item in self._events.all():
             event = Event.from_dict(item)
-            db_date = pendulum.from_timestamp(event.date)
-            time_delta = date.diff(db_date).in_hours()
+            # Use absolute epoch-second difference to avoid timezone/offset issues
+            try:
+                photo_ts = int(date.int_timestamp)
+            except Exception:
+                # fallback to pendulum conversion
+                photo_ts = int(date.timestamp())
+
+            try:
+                event_ts = int(event.date)
+            except Exception:
+                event_ts = int(pendulum.from_timestamp(event.date).int_timestamp)
+
+            time_delta_hours = abs(photo_ts - event_ts) / 3600.0
             # check temporal proximity first
-            if time_delta < max_time_delta_in_hours:
+            if time_delta_hours <= max_time_delta_in_hours:
                 # check spatial proximity between event coordinates and provided location
                 try:
                     event_coords = (event.latitude, event.longitude)
@@ -217,7 +228,7 @@ class ProjectDB(DatabaseManager):
                         or event.location == location._name
                     ):
                         return event, True
-        return date, False
+        return None, False
 
     def is_event(self, date: pendulum.DateTime):
         """
@@ -245,6 +256,19 @@ class ProjectDB(DatabaseManager):
         if path:
             event.photos = event.photos + [path]
 
+        # Ensure event.date is stored as UTC epoch seconds (int)
+        try:
+            # If event.date is a pendulum DateTime or similar
+            event_ts = int(event.date)
+        except Exception:
+            try:
+                # If it's a float timestamp
+                event_ts = int(float(event.date))
+            except Exception:
+                # As a last resort, leave as-is
+                event_ts = event.date
+
+        event.date = event_ts
         logger.debug(f"Upserting event: {event.name} with date {event.date}")
         existing = self._events.get(
             (self._query.name == event.name) & (self._query.date == event.date)

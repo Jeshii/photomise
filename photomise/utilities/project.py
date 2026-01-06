@@ -170,9 +170,12 @@ def handle_duplicate_events(
             f"\n[yellow]Warning:[/yellow] Photo {photo_path} appears in multiple events..."
         )
         for idx, event in enumerate(events, 1):
-            console.print(
-                f"{idx}. {event.name} ({pendulum.from_timestamp(event.date).format('YYYY-MM-DD')})"
+            local_date = (
+                pendulum.from_timestamp(event.date)
+                .in_tz(pendulum.local_timezone())
+                .format("YYYY-MM-DD")
             )
+            console.print(f"{idx}. {event.name} ({local_date})")
 
         keep_idx = inquirer.select(
             message="Which event should keep this photo?",
@@ -188,4 +191,7 @@ def handle_duplicate_events(
             logger.error("Invalid selection. No event will be updated.")
             return
 
-        pdb.remove_photo_from_event(events, photo_path, int(keep_idx))
+        keep_event = events[int(keep_idx) - 1]
+        for event in events:
+            if event.name != keep_event.name:
+                pdb.remove_photo_from_event(event, photo_path)

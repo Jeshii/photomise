@@ -212,7 +212,15 @@ def extract_datetime(tags: dict) -> pendulum:
     if date_taken:
         date_taken_str = date_taken.decode("utf-8")
         date_taken_formatted = date_taken_str.replace(":", "-", 2)
-        dt = pendulum.parse(date_taken_formatted)
+        # EXIF DateTimeOriginal does not include timezone; assume local timezone
+        try:
+            dt = pendulum.parse(date_taken_formatted)
+            if dt.tzinfo is None:
+                dt = dt.in_tz(pendulum.local_timezone())
+        except Exception:
+            # fallback: parse with from_format
+            dt = pendulum.from_format(date_taken_formatted, "YYYY-MM-DD HH:mm:ss")
+            dt = dt.in_tz(pendulum.local_timezone())
 
         return dt
     else:

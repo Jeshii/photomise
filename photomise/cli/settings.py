@@ -17,6 +17,13 @@ logger, console = setup_logging()
 def project(
     project: str = typer.Argument(..., help="Project name"),
     project_path: str = typer.Option(None, "--path", "-p", help="Path to project"),
+    base_dir: str = typer.Option(
+        None,
+        "--base-dir",
+        "-b",
+        help="Base directory for assets (overrides project path)",
+        show_default=False,
+    ),
     description: bool = typer.Option(
         False,
         "--description",
@@ -56,9 +63,14 @@ def project(
     if not project_path:
         project_path = projects[project]
 
+    # If base_dir provided, use it as the project path (after normalizing)
+    if base_dir:
+        project_path = base_dir
+
     if project_path != projects[project]:
         logger.warning(f"Updating project path for {project}.")
-        gdb.upsert_project(project, project_path)
+        params = {"name": project, "path": project_path}
+        gdb.upsert_project(params)
 
     pdb = get_project_db(project, project_path)
 
@@ -79,6 +91,12 @@ def project(
     result = pdb.update_settings(project_settings)
 
     logger.info(f"Settings for {project}: {result}")
+
+    # Inform the user where to place photos for processing
+    assets_path = f"{project_path}/assets"
+    console.print(
+        f"\nTo process photos for project '{project}', place images under: [bold]{assets_path}[/bold]"
+    )
 
     pdb.close()
     gdb.close()

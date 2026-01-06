@@ -82,7 +82,16 @@ def init(
         os.makedirs(f"{project_path}/assets")
     project = sanitize_text(project.lower())
     projects[project] = project_path
-    gdb.upsert_project(project, project_path, description, flavor)
+    params = {
+        "name": project,
+        "path": project_path,
+        "description": description,
+        "flavor": flavor,
+        "tags": tags,
+        "event_radius_meters": event_radius_meters,
+        "event_time_delta_hours": event_time_delta_hours,
+    }
+    gdb.upsert_project(params)
 
     pdb = get_project_db(project, project_path)
 

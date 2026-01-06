@@ -24,7 +24,22 @@ class Location:
         # Create a copy to avoid modifying the input
         data_copy = data.copy()
         if "name" in data_copy:
-            data_copy["_name"] = sanitize_text(data_copy.pop("name"))
+            # Normalize stored names: if percent-encoded (possibly multiple times),
+            # decode repeatedly to the plain text, then sanitize once so `_name`
+            # stores a canonical percent-encoded representation.
+            raw_name = data_copy.pop("name")
+            decoded = raw_name
+            try:
+                while True:
+                    next_decoded = unquote(decoded)
+                    if next_decoded == decoded:
+                        break
+                    decoded = next_decoded
+            except Exception:
+                # If anything goes wrong with decoding, fall back to raw_name
+                decoded = raw_name
+
+            data_copy["_name"] = sanitize_text(decoded)
         return cls(**data_copy)
 
     def to_dict(self) -> dict:
