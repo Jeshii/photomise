@@ -188,12 +188,24 @@ class ProjectDB(DatabaseManager):
         Returns:
             tuple: Date of the event, event data, and True if the event exists, False otherwise.
         """
-        # get project settings for radius and time delta
+        # get project settings for time delta and radius; fall back to shared/global DB
         settings = self.settings or {}
-        event_radius_meters = settings.get("event_radius_meters", 500)
-        event_radius_km = event_radius_meters / 1000.0
         if max_time_delta_in_hours is None:
             max_time_delta_in_hours = settings.get("event_time_delta_hours", 8)
+
+        # Prefer per-project radius for portability; fall back to shared DB
+        event_radius_meters = settings.get("event_radius_meters")
+        if event_radius_meters is None:
+            try:
+                shared_db = SharedDB()
+                shared_proj = shared_db.get_project(self.project_name)
+                event_radius_meters = (
+                    shared_proj.get("event_radius_meters") if shared_proj else 500
+                )
+                shared_db.close()
+            except Exception:
+                event_radius_meters = 500
+        event_radius_km = event_radius_meters / 1000.0
 
         from geopy.distance import great_circle
 

@@ -73,15 +73,44 @@ class SharedDB(DatabaseManager):
             return False
 
     def upsert_project(self, params: dict) -> str:
-        updated = self._projects.upsert(
-            params,
-            self._query.name == params["name"],
-        )
+        # Only store minimal project info in the shared DB (name and path).
+        record = {"name": params.get("name"), "path": params.get("path")}
+        updated = self._projects.upsert(record, self._query.name == record["name"])
 
-        if updated:
-            return params["name"]
-        else:
+        if not updated:
             return False
+
+        # If extra project-specific settings were provided (e.g. radius/time-delta),
+        # they should live in the per-project DB for portability. Return the
+        # project name and let callers optionally run migration to move the
+        # additional keys into the project DB.
+        return record["name"]
+
+    def migrate_project_settings(self, project_name: str, params: dict):
+        """Move project-specific settings from a params dict into the per-project DB.
+
+        This helper will open the project DB (if path available in shared DB) and
+        update the project's settings with any keys other than name/path.
+        """
+        # Determine project path from shared table
+        project_entry = self._projects.get(self._query.name == project_name)
+        if not project_entry:
+            raise ValueError("Project not found in shared DB")
+
+        project_path = project_entry.get("path")
+        # Lazy import to avoid circular imports at module load
+        from photomise.utilities.project import get_project_db
+
+        pdb = get_project_db(project_name, project_path)
+        project_settings = pdb.settings or {}
+        # Copy any keys other than name/path into project settings
+        for k, v in params.items():
+            if k in ("name", "path"):
+                continue
+            project_settings[k] = v
+
+        pdb.update_settings(project_settings)
+        pdb.close()
 
     def count_locations(self) -> int:
         return len(self._locations)
@@ -90,6 +119,10 @@ class SharedDB(DatabaseManager):
         return Location.from_dict(
             self._locations.get(self._query.name == location_name)
         )
+
+    def get_project(self, project_name: str) -> dict | None:
+        """Return the full project record from the shared projects table."""
+        return self._projects.get(self._query.name == project_name)
 
     def upsert_location(self, location: Location) -> str:
         return self._locations.upsert(

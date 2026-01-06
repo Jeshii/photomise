@@ -83,10 +83,12 @@ def project(
     }
 
     # Only include optional settings if provided
-    if event_radius_meters is not None:
-        project_settings["event_radius_meters"] = event_radius_meters
     if event_time_delta_hours is not None:
         project_settings["event_time_delta_hours"] = event_time_delta_hours
+
+    # Store radius and time-delta in the per-project DB for portability.
+    if event_radius_meters is not None:
+        project_settings["event_radius_meters"] = event_radius_meters
 
     result = pdb.update_settings(project_settings)
 
@@ -148,3 +150,75 @@ def interactive():
             console.print(f"""{setting.title()} "{updated}" settings saved.""")
         else:
             console.print(f"""Error saving {setting} settings.""")
+
+    @app.command()
+    def clean_radius(
+        project: str = typer.Argument(..., help="Project name"),
+        project_path: str = typer.Option(None, "--path", "-p", help="Path to project"),
+    ):
+        """Remove event_radius_meters from per-project settings (keep shared-only)."""
+        try:
+            gdb = SharedDB()
+        except Exception as e:
+            logger.fatal(f"Error: {e}")
+            typer.Exit(1)
+
+        projects = gdb.projects
+
+        if project not in projects.keys():
+            logger.error(f"Project {project} not found in global database.")
+            typer.Exit(1)
+
+        if not project_path:
+            project_path = projects[project]
+
+        pdb = get_project_db(project, project_path)
+
+        settings = pdb.settings or {}
+        if settings.get("event_radius_meters") is not None:
+            settings.pop("event_radius_meters", None)
+            pdb.update_settings(settings)
+            console.print(
+                f"Removed event_radius_meters from project settings for {project}"
+            )
+        else:
+            console.print(
+                f"No event_radius_meters found in project settings for {project}"
+            )
+
+        pdb.close()
+        gdb.close()
+
+    @app.command()
+    def migrate_shared(project: str = typer.Argument(..., help="Project name")):
+        """Migrate any project-specific keys from the shared DB into the per-project DB."""
+        try:
+            gdb = SharedDB()
+        except Exception as e:
+            logger.fatal(f"Error: {e}")
+            typer.Exit(1)
+
+        shared_proj = gdb.get_project(project)
+        if not shared_proj:
+            console.print(f"No shared project entry found for {project}")
+            gdb.close()
+            return
+
+        # Copy any keys other than name/path into the project DB
+        extras = {k: v for k, v in shared_proj.items() if k not in ("name", "path")}
+        if not extras:
+            console.print(
+                f"No project-specific keys present in shared DB for {project}"
+            )
+            gdb.close()
+            return
+
+        try:
+            gdb.migrate_project_settings(project, extras)
+            console.print(
+                f"Migrated keys into project DB for {project}: {', '.join(extras.keys())}"
+            )
+        except Exception as e:
+            console.print(f"Migration failed: {e}")
+
+        gdb.close()

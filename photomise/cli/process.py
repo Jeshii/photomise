@@ -341,7 +341,25 @@ def locations(
             continue
 
         if lat and lon:
-            location = gdb.find_location(lat, lon)
+            # Prefer per-project radius (portable). Fall back to shared DB if missing.
+            proj_settings = pdb.settings or {}
+            event_radius_meters = proj_settings.get("event_radius_meters")
+            radius_source = "project"
+            if event_radius_meters is None:
+                try:
+                    shared_proj = gdb.get_project(pdb.project_name)
+                    event_radius_meters = (
+                        shared_proj.get("event_radius_meters") if shared_proj else 500
+                    )
+                    radius_source = "shared"
+                except Exception:
+                    event_radius_meters = 500
+                    radius_source = "default"
+            event_radius_km = event_radius_meters / 1000.0
+            console.print(
+                f"Using event_radius_meters={event_radius_meters} (source={radius_source})"
+            )
+            location = gdb.find_location(lat, lon, max_distance_km=event_radius_km)
             if location:
                 console.print(f"Location Name: {location.name}")
                 console.print(f"Photo Geodata: Latitude: {lat}, Longitude: {lon}")
@@ -395,7 +413,26 @@ def locations(
                     console.print("Invalid longitude format.")
                     continue
 
-                location = gdb.find_location(lat, lon)
+                proj_settings = pdb.settings or {}
+                event_radius_meters = proj_settings.get("event_radius_meters")
+                radius_source = "project"
+                if event_radius_meters is None:
+                    try:
+                        shared_proj = gdb.get_project(pdb.project_name)
+                        event_radius_meters = (
+                            shared_proj.get("event_radius_meters")
+                            if shared_proj
+                            else 500
+                        )
+                        radius_source = "shared"
+                    except Exception:
+                        event_radius_meters = 500
+                        radius_source = "default"
+                event_radius_km = event_radius_meters / 1000.0
+                console.print(
+                    f"Using event_radius_meters={event_radius_meters} (source={radius_source})"
+                )
+                location = gdb.find_location(lat, lon, max_distance_km=event_radius_km)
                 if location:
                     console.print(f"Location: {location.name}")
                 else:

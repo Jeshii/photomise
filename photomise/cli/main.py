@@ -82,16 +82,9 @@ def init(
         os.makedirs(f"{project_path}/assets")
     project = sanitize_text(project.lower())
     projects[project] = project_path
-    params = {
-        "name": project,
-        "path": project_path,
-        "description": description,
-        "flavor": flavor,
-        "tags": tags,
-        "event_radius_meters": event_radius_meters,
-        "event_time_delta_hours": event_time_delta_hours,
-    }
-    gdb.upsert_project(params)
+    # Shared DB should only contain minimal project info for portability.
+    shared_params = {"name": project, "path": project_path}
+    gdb.upsert_project(shared_params)
 
     pdb = get_project_db(project, project_path)
 
@@ -101,10 +94,27 @@ def init(
         "description": description,
         "flavor": flavor,
         "tags": tags,
-        "event_radius_meters": event_radius_meters,
         "event_time_delta_hours": event_time_delta_hours,
+        # Store event radius in project DB for portability - keep consistent
+        # with the project-local settings design.
+        "event_radius_meters": event_radius_meters,
     }
+    # Store per-project settings (time delta etc.).
     pdb.insert_settings(settings)
+
+    # If the shared upsert contained extra keys previously, ensure any
+    # leftover keys are migrated into the project DB for consistency.
+    try:
+        gdb.migrate_project_settings(
+            project,
+            {
+                "event_radius_meters": event_radius_meters,
+                "event_time_delta_hours": event_time_delta_hours,
+            },
+        )
+    except Exception:
+        # Non-fatal: ignore migration errors
+        pass
 
     logger.info(f"Project {project} initialized at {project_path}.")
 
