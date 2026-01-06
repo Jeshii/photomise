@@ -267,31 +267,23 @@ class ProjectDB(DatabaseManager):
 
         return no_event_photos
 
-    ### NOT WORKING when called from handle_duplicate_events()
     def remove_photo_from_event(
-        self, events: list[Event], photo_path: str, keep_idx: int = 0
+        self, event: Event, photo_path: str
     ) -> None:
         """
-        Remove a photo from all events except the one specified.
+        Remove a photo from specified event.
 
         Args:
-            events (list): List of events.
-            photo_path (str): Path to the photo.
-            keep_idx (int): Index of the event to keep the photo in. Will remove the photo from all events if 0.
+            events: List of events.
+            photo_path: Path to the photo.
         """
-        if keep_idx:
-            keep_event = events[int(keep_idx) - 1]
-        else:
-            keep_event = Event()
-        print("Keep event:", keep_event)
-        for event in events:
-            if event.name != keep_event.name:
-                print(f"Removing photo from {event.name}")
-                photos = event.photos
-                photos.remove(photo_path)
-                self._events.update(
-                    {"photos": event.photos}, self._query.event == event.name
-                )
+        
+        print(f"Removing photo from {event.name}")
+        photos = event.photos
+        photos.remove(photo_path)
+        self._events.update(
+            {"photos": event.photos}, self._query.event == event.name
+        )
 
     def find_events_with_photo(self, photo_path: str) -> list[Event]:
         """

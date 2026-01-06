@@ -455,7 +455,7 @@ def locations(
             event.name = f"{pendulum.from_timestamp(event.date).format('YYYYMMDD')}-{location._name}"
         else:
             event.name = inquirer.text(
-                f"Please name this event from {event.date.format('YYYY-MM-DD')} at {location.name}"
+                f"Please name this event from {pendulum.from_timestamp(event.date).format('YYYYMMDD')} at {location.name}"
             ).execute()
 
         if event_same:
@@ -518,7 +518,7 @@ def rank(
     for event_name, event in events.items():
         logging.debug(f"[{project}] Event: {event}")
         try:
-            photos = event["photos"]
+            photos = event.photos
         except KeyError:
             logging.fatal("Event not found.")
             typer.Exit(1)
@@ -529,6 +529,7 @@ def rank(
             for photo_path in photos:
                 photo_record = pdb.get_photo(photo_path)
                 photo_record.compress_image(
+                    project_path=main_path,
                     show=True,
                 )
         for photo_record in photos:
@@ -549,7 +550,7 @@ def rank(
             event_to_update = events_with_photo[0]
             ranking = {
                 "rank": rank,
-                "event": event_to_update["event"],
+                "event": event_to_update.name,
                 "path": photo_record,
             }
             pdb.upsert_rankings(ranking)
@@ -565,6 +566,7 @@ def rank(
                 if view:
                     photo_record = pdb.get_photo(photo_path)
                     photo_record.compress_image(
+                        project_path=main_path,
                         show=True,
                     )
     pdb.close()
@@ -587,7 +589,7 @@ def prune(
     # Project initialization
     pdb, main_path = set_project(project)
     logging.debug(f"Project: {project}, Path: {main_path}, Settings: {pdb.settings}")
-    events = pdb.get_events()
+    events = pdb.get_events(event_name)
     if not events:
         logging.fatal("No events found. Please run photomise first.")
         typer.Exit(1)
@@ -596,20 +598,13 @@ def prune(
             message="Choose an event to prune", choices=events.keys()
         ).execute()
 
-    if not all:
-        try:
-            events = [events[event_name]]
-        except KeyError:
-            logging.fatal("Event not found.")
-            typer.Exit(1)
-
     if no_event:
         photos = pdb.get_photos_without_event()
 
-    for event_name, event in events.items():
+    for event in events.values():
         logging.debug(f"[{project}] Event: {event}")
         if all:
-            console.print(f"{event_name}:")
+            console.print(f"{event.name}:")
         if not no_event:
             try:
                 photos = event.photos
@@ -619,22 +614,21 @@ def prune(
         console.print(f"There are {len(photos)} photos in this event.")
         if view:
             for photo in photos:
-                print(photo)
-                photo_record = pdb.get_photo(
-                    convert_to_absolute_path(photo.path, main_path)
-                )
+                photo_record = pdb.get_photo(photo)
                 photo_record.compress_image(
+                    project_path=main_path,
                     show=True,
                 )
         for photo_record in photos:
             if inquirer.confirm(
-                message=f"Would you like to remove this photo - {convert_to_absolute_path(photo_record.path, main_path)}:"
+                message=f"Would you like to remove this photo - {convert_to_absolute_path(photo_record, main_path)} - from this event"
             ).execute():
-
+                pdb.remove_photo_from_event(event, photo_record)
+                console.print(f"Photo removed from {event.name}.")
+                logger.info(f"[{project}] Photo removed from {event.name}.")
                 if inquirer.confirm(
-                    message="Would you like to remove the photo as well?"
+                    message="Would you like to remove the file as well?"
                 ).execute():
-                    pdb.remove_photo_from_event(events, photo_record)
                     pdb.remove_photo(photo_record)
                     trash_folder = os.path.join(main_path, "trash")
                     os.makedirs(trash_folder, exist_ok=True)
@@ -645,8 +639,5 @@ def prune(
                     console.print(
                         f"Photo removed completely and file moved to {trash_folder}."
                     )
-                else:
-                    pdb.remove_photo_from_event(events, photo_record, event_name)
-                    console.print(f"Photo removed from {event_name}.")
 
     pdb.close()

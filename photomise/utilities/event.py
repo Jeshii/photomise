@@ -1,10 +1,9 @@
 from dataclasses import dataclass
 
-
 @dataclass
 class Event:
     name: str = ""
-    date: float = (0,)
+    date: float = 0.0
     latitude: float = 0.0
     longitude: float = 0.0
     location: str = ""
