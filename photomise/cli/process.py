@@ -9,7 +9,6 @@ import piexif
 import typer
 from InquirerPy import inquirer
 from rich.progress import Progress
-from spellchecker import SpellChecker
 
 from photomise.database.shared import SharedDB
 from photomise.utilities.event import Event
@@ -31,9 +30,7 @@ from photomise.utilities.project import (
     item_duplicate,
     set_project,
 )
-from photomise.utilities.shared import make_min_max_prompt, spellcheck
-
-spell = SpellChecker()
+from photomise.utilities.shared import make_min_max_prompt
 
 app = typer.Typer()
 logger, console = setup_logging()
@@ -56,9 +53,6 @@ def images(
         "--file",
         "-f",
         help="Process a specific file",
-    ),
-    check_spelling: bool = typer.Option(
-        False, "--spellcheck", "-s", help="Check spelling of text"
     ),
 ):
     """Process image by rotating, scaling, changing quality, or apply filters."""
@@ -220,8 +214,6 @@ def images(
                 default="" if default_description is None else str(default_description),
             ).execute()
 
-            if check_spelling:
-                description = spellcheck(description)
             progress.start()
             photo_record.description = description
 
@@ -232,8 +224,6 @@ def images(
                 default="" if default_flavor is None else str(default_flavor),
             ).execute()
 
-            if check_spelling:
-                flavor = spellcheck(flavor)
             progress.start()
             photo_record.flavor = flavor
 

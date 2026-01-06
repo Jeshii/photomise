@@ -3,7 +3,6 @@ from typing import List
 
 import pendulum
 from tinydb.queries import Query
-from tinydb.table import Document
 
 from photomise.database.base import DatabaseManager
 from photomise.database.shared import SharedDB
