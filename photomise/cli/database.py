@@ -9,10 +9,9 @@ from rich.table import Table
 
 from photomise.database.shared import SharedDB
 from photomise.utilities.constants import LOG_DIR
-from photomise.utilities.event import Event
 from photomise.utilities.logging import setup_logging
 from rich.console import Console
-from photomise.utilities.project import convert_to_absolute_path, set_project
+from photomise.utilities.project import set_project
 from photomise.utilities.shared import format_file_size
 
 app = typer.Typer()
@@ -130,7 +129,7 @@ def export_gpx(
     """Export events as a GPX file. If `--event` is provided, export only that event."""
 
     try:
-        pdb, project_path = set_project(project)
+        pdb, _ = set_project(project)
     except Exception as e:
         logger.fatal(e)
         raise typer.Exit(1)
