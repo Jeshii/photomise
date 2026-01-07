@@ -17,6 +17,7 @@ def edit(
     contrast: float = typer.Option(None, "--contrast", "-con", help="Contrast"),
     color: float = typer.Option(None, "--color", "-col", help="Color"),
     sharpness: float = typer.Option(None, "--sharpness", "-s", help="Sharpness"),
+    rename: bool = typer.Option(False, "--rename", "-r", help="Rename filter"),
 ):
     """Edit filter settings."""
     try:
@@ -24,6 +25,20 @@ def edit(
     except Exception as e:
         logger.fatal(e)
         typer.Exit(1)
+    # Handle rename first (if requested)
+    if rename:
+        new_name = prompt("Enter new filter name:")
+        try:
+            rename_result = gdb.rename_filter(filter_name, new_name)
+            if not rename_result:
+                logger.error(f"Unable to rename filter {filter_name}.")
+                return
+            filter_name = rename_result
+            logger.info(f"Filter renamed to {filter_name}")
+        except Exception as e:
+            logger.error(f"Rename failed: {e}")
+            return
+
     filter = gdb.get_filter(filter_name)
     logger.debug(f"Filter: {filter}")
     if not filter:
