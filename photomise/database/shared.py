@@ -115,10 +115,15 @@ class SharedDB(DatabaseManager):
     def count_locations(self) -> int:
         return len(self._locations)
 
-    def get_location(self, location_name: str) -> Location:
-        return Location.from_dict(
-            self._locations.get(self._query.name == location_name)
-        )
+    def get_locations_all(self) -> list:
+        """Return all location records from the locations table."""
+        return self._locations.all()
+
+    def get_location(self, location_name: str) -> Location | None:
+        record = self._locations.get(self._query.name == location_name)
+        if not record:
+            return None
+        return Location.from_dict(record)
 
     def get_project(self, project_name: str) -> dict | None:
         """Return the full project record from the shared projects table."""

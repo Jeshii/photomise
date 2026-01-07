@@ -2,6 +2,7 @@ import os
 
 import pendulum
 import typer
+from typer import prompt, confirm
 from InquirerPy import inquirer
 
 from photomise.database.project import ProjectDB
@@ -85,22 +86,22 @@ def set_project_settings(pdb: ProjectDB) -> None:
     settings["description"] = setting_doc.get("description")
     settings["flavor"] = setting_doc.get("flavor")
 
-    settings["max_dimension"] = inquirer.text(
-        message="Set maximum dimension for images",
+    settings["max_dimension"] = prompt(
+        "Set maximum dimension for images",
         default=str(settings.get("max_dimension")),
-    ).execute()
-    settings["quality"] = inquirer.text(
-        message="Set the quality level for compressed images",
+    )
+    settings["quality"] = prompt(
+        "Set the quality level for compressed images",
         default=str(settings.get("quality")),
-    ).execute()
-    settings["description"] = inquirer.confirm(
-        message="Would you like to provide alt text?",
-        default=settings.get("description"),
-    ).execute()
-    settings["flavor"] = inquirer.confirm(
-        message="Would you like to provide flavor text for the images?",
-        default=settings.get("flavor"),
-    ).execute()
+    )
+    settings["description"] = confirm(
+        "Would you like to provide alt text?",
+        default=bool(settings.get("description")),
+    )
+    settings["flavor"] = confirm(
+        "Would you like to provide flavor text for the images?",
+        default=bool(settings.get("flavor")),
+    )
 
     updated = pdb.upsert_settings(
         {

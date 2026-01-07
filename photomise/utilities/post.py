@@ -1,8 +1,8 @@
 import getpass
 
 import keyring
-from InquirerPy import inquirer
 from keyring.errors import KeyringError
+from typer import prompt
 
 from photomise.database.project import ProjectDB
 from photomise.utilities.constants import BLUESKY_SERVICE_NAME
@@ -12,7 +12,7 @@ def get_bluesky_user(pdb: ProjectDB) -> str:
     try:
         return pdb.get_bluesky_user()
     except TypeError:
-        user = inquirer.text("Enter your Bluesky username").execute()
+        user = prompt("Enter your Bluesky username")
         pdb.set_bluesky_user(user)
         return user
 

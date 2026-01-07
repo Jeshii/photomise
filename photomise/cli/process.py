@@ -7,6 +7,7 @@ import time
 import pendulum
 import piexif
 import typer
+from typer import prompt, confirm
 from InquirerPy import inquirer
 from rich.progress import Progress
 
@@ -130,7 +131,7 @@ def images(
                     error = e
                     break
                 progress.stop()
-                if inquirer.confirm(message="Does the image look okay?").execute():
+                if confirm(message="Does the image look okay?"):
                     progress.start()
                     break
                 else:
@@ -309,17 +310,13 @@ def locations(
             )
 
         if not date_object:
-            if inquirer.confirm(
-                "No date found in EXIF data. Would you like to add one?"
-            ).execute():
-                entered_date = inquirer.text(
-                    "Please enter a date for this photo"
-                ).execute()
+            if confirm("No date found in EXIF data. Would you like to add one?"):
+                entered_date = prompt("Please enter a date for this photo")
                 if entered_date:
                     date_object = pendulum.parse(entered_date, strict=False)
-                    if inquirer.confirm(
+                    if confirm(
                         f"Save {date_object.format('YYYY-MM-DD HH:mm:ss')} to the exif data?"
-                    ).execute():
+                    ):
                         # Save to exif data
                         exif_dict = piexif.load(file_path)
                         exif_dict["Exif"] = {
@@ -384,10 +381,8 @@ def locations(
                 result = gdb.upsert_location(location)
                 logger.info(f"Location upserted: {result}")
         else:
-            if inquirer.confirm(
-                "No GPS info found - would you like to add some?"
-            ).execute():
-                lat = inquirer.text("Latitude").execute()
+            if confirm("No GPS info found - would you like to add some?"):
+                lat = prompt("Latitude")
                 try:
                     if "°" in lat or "S" in lat or "N" in lat:
                         if "S" in lat:
@@ -400,7 +395,7 @@ def locations(
                     logger.warning("Invalid latitude format.")
                     continue
 
-                lon = inquirer.text("Longitude").execute()
+                lon = prompt("Longitude")
                 try:
                     if "°" in lon or "W" in lon or "E" in lon:
                         if "W" in lon:

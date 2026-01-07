@@ -9,6 +9,7 @@ from xml.dom import minidom
 import pendulum
 import typer
 from atproto import Client, models
+from typer import prompt
 from InquirerPy import inquirer
 
 from photomise.database.shared import SharedDB
@@ -68,7 +69,7 @@ def atprotocol(
 
     if not random:
         event_name = inquirer.select(
-            message="Choose an event to post", choices=events.keys()
+            message="Choose an event to post", choices=list(events.keys())
         ).execute()
     else:
         random_event = rand.choice(list(events.values()))
@@ -281,7 +282,7 @@ def gpx(
 
     if not event:
         event_name = inquirer.select(
-            message="Choose an event to export", choices=events.keys()
+            message="Choose an event to export", choices=list(events.keys())
         ).execute()
     else:
         event_name = event

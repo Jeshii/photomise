@@ -1,6 +1,5 @@
 import typer
 from InquirerPy import inquirer
-
 from photomise.cli import filters, locations
 from photomise.database.shared import SharedDB
 from photomise.utilities.logging import setup_logging
@@ -151,68 +150,4 @@ def interactive():
         else:
             logger.error(f"Error saving {setting} settings.")
 
-    @app.command()
-    def clean_radius(
-        project: str = typer.Argument(..., help="Project name"),
-        project_path: str = typer.Option(None, "--path", "-p", help="Path to project"),
-    ):
-        """Remove event_radius_meters from per-project settings (keep shared-only)."""
-        try:
-            gdb = SharedDB()
-        except Exception as e:
-            logger.fatal(e)
-            typer.Exit(1)
-
-        projects = gdb.projects
-
-        if project not in projects.keys():
-            logger.error(f"Project {project} not found in global database.")
-            typer.Exit(1)
-
-        if not project_path:
-            project_path = projects[project]
-
-        pdb = get_project_db(project, project_path)
-
-        settings = pdb.settings or {}
-        if settings.get("event_radius_meters") is not None:
-            settings.pop("event_radius_meters", None)
-            pdb.update_settings(settings)
-            logger.info(f"Removed event_radius_meters from project settings for {project}")
-        else:
-            logger.info(f"No event_radius_meters found in project settings for {project}")
-
-        pdb.close()
-        gdb.close()
-
-    @app.command()
-    def migrate_shared(project: str = typer.Argument(..., help="Project name")):
-        """Migrate any project-specific keys from the shared DB into the per-project DB."""
-        try:
-            gdb = SharedDB()
-        except Exception as e:
-            logger.fatal(e)
-            typer.Exit(1)
-
-        shared_proj = gdb.get_project(project)
-        if not shared_proj:
-            logger.info(f"No shared project entry found for {project}")
-            gdb.close()
-            return
-
-        # Copy any keys other than name/path into the project DB
-        extras = {k: v for k, v in shared_proj.items() if k not in ("name", "path")}
-        if not extras:
-            logger.info(f"No project-specific keys present in shared DB for {project}")
-            gdb.close()
-            return
-
-        try:
-            gdb.migrate_project_settings(project, extras)
-            logger.info(
-                f"Migrated keys into project DB for {project}: {', '.join(extras.keys())}"
-            )
-        except Exception as e:
-            logger.error(f"Migration failed: {e}")
-
-        gdb.close()
+    gdb.close()

@@ -1,5 +1,6 @@
-import InquirerPy as inquirer
 import typer
+from typer import prompt
+from InquirerPy import inquirer
 
 from photomise.database.shared import SharedDB
 from photomise.utilities.logging import setup_logging
@@ -93,7 +94,7 @@ def rename(
             choices=[filter["name"] for filter in gdb.get_filters_all()],
         ).execute()
     if not new_name:
-        new_name = inquirer.text(message="Enter new name:").execute()
+        new_name = prompt("Enter new name:")
     new_name_confirmation = gdb.rename_filter(old_name, new_name)
     if not new_name_confirmation:
         logger.error(f"Unable to rename filter {old_name}.")

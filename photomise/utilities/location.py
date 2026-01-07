@@ -23,6 +23,7 @@ class Location:
         """Create a Location instance from a dictionary."""
         # Create a copy to avoid modifying the input
         data_copy = data.copy()
+        # Ensure correction fields exist even if absent in stored dict
         if "name" in data_copy:
             # Normalize stored names: if percent-encoded (possibly multiple times),
             # decode repeatedly to the plain text, then sanitize once so `_name`
