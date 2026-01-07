@@ -5,7 +5,7 @@ from photomise.database.shared import SharedDB
 from photomise.utilities.logging import setup_logging
 
 app = Typer()
-logging, console = setup_logging()
+logger = setup_logging()
 
 
 @app.command()
@@ -20,7 +20,7 @@ def edit(
     try:
         gdb = SharedDB()
     except Exception as e:
-        logging.fatal(f"Error: {e}")
+        logger.fatal(e)
         return
     if rename:
         location_name = inquirer.text(

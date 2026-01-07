@@ -12,7 +12,7 @@ from atproto import Client, models
 from InquirerPy import inquirer
 
 from photomise.database.shared import SharedDB
-from photomise.utilities import logging
+from photomise.utilities.logging import setup_logging, get_log_dir
 from photomise.utilities.photo import (
     Photo,
     extract_datetime,
@@ -29,7 +29,7 @@ from photomise.utilities.project import (
 
 app = typer.Typer()
 
-logger, console = logging.setup_logging()
+logger = setup_logging()
 
 
 @app.command()
@@ -217,10 +217,10 @@ def plist(
             logger.fatal(f"Project path {project_path} not found.")
             typer.Exit(1)
     except Exception as e:
-        logger.fatal(f"Error: {e}")
+        logger.fatal(e)
         typer.Exit(1)
 
-    log_dir = logging.get_log_dir()
+    log_dir = get_log_dir()
 
     executable_path = sys.executable
 
@@ -253,7 +253,7 @@ def plist(
     with open(output_file_path, "wb") as plist_file:
         plistlib.dump(plist_data, plist_file)
 
-    console.print(
+    logger.info(
         f"""Plist file exported to {output_path}.
 Run [bold]launchctl load {output_file_path}[/bold] to schedule the task.
 Run [bold]launchctl unload {output_file_path}[/bold] to remove the schedule.
@@ -336,14 +336,32 @@ def gpx(
     reparsed = minidom.parseString(rough_string)
     pretty = reparsed.toprettyxml(indent="  ")
 
+    # If a specific GPX file was provided, use it. Otherwise determine the
+    # directory to write into. When the user leaves the default (`.`), write
+    # into a `post` folder inside the project.
     if output.endswith(".gpx") or output.endswith(".GPX"):
         out_file = output
+        out_dir = os.path.dirname(os.path.abspath(out_file)) or "."
     else:
-        out_file = (
-            f"{output.rstrip('/')}/{pdb.project_name}-{sanitize_text(ev.name)}.gpx"
-        )
+        if output == ".":
+            out_dir = os.path.join(main_path, "post")
+        else:
+            out_dir = output.rstrip('/')
+
+        # Create the directory and notify the user if we created it.
+        dir_existed = os.path.exists(out_dir)
+        try:
+            os.makedirs(out_dir, exist_ok=True)
+        except Exception as e:
+            logger.fatal(f"Could not create output directory {out_dir}: {e}")
+            return
+
+        if not dir_existed:
+            logger.info(f"Created directory {out_dir} for GPX output")
+
+        out_file = f"{out_dir}/{pdb.project_name}-{sanitize_text(ev.name)}.gpx"
 
     with open(out_file, "w", encoding="utf-8") as fh:
         fh.write(pretty)
 
-    console.print(f"Exported {len(trackpoints)} trackpoints to {out_file}")
+    logger.info(f"Exported {len(trackpoints)} trackpoints to {out_file}")

@@ -5,7 +5,7 @@ from photomise.database.shared import SharedDB
 from photomise.utilities.logging import setup_logging
 from photomise.utilities.shared import make_min_max_prompt, min_max_check
 
-logging, console = setup_logging()
+logger = setup_logging()
 app = typer.Typer()
 
 
@@ -21,10 +21,10 @@ def edit(
     try:
         gdb = SharedDB()
     except Exception as e:
-        logging.fatal(f"Error: {e}")
+        logger.fatal(e)
         typer.Exit(1)
     filter = gdb.get_filter(filter_name)
-    logging.debug(f"Filter: {filter}")
+    logger.debug(f"Filter: {filter}")
     if not filter:
         filter = {
             "brightness": 1.0,
@@ -65,7 +65,7 @@ def delete(
     try:
         gdb = SharedDB()
     except Exception as e:
-        logging.fatal(f"Error: {e}")
+        logger.fatal(e)
         return
     if not filter_name:
         filter_name = inquirer.select(
@@ -85,7 +85,7 @@ def rename(
     try:
         gdb = SharedDB()
     except Exception as e:
-        logging.fatal(f"Error: {e}")
+        logger.fatal(e)
         return
     if not old_name:
         old_name = inquirer.select(
@@ -96,9 +96,9 @@ def rename(
         new_name = inquirer.text(message="Enter new name:").execute()
     new_name_confirmation = gdb.rename_filter(old_name, new_name)
     if not new_name_confirmation:
-        logging.error(f"Unable to rename filter {old_name}.")
+        logger.error(f"Unable to rename filter {old_name}.")
     else:
-        logging.info(f"Filter {old_name} renamed to {new_name_confirmation}.")
+        logger.info(f"Filter {old_name} renamed to {new_name_confirmation}.")
 
 
 @app.command()
@@ -107,12 +107,12 @@ def list():
     try:
         gdb = SharedDB()
     except Exception as e:
-        logging.fatal(f"Error: {e}")
+        logger.fatal(e)
         return
     filters = gdb.get_filters_all()
     for filter in filters:
-        console.print(f"[bold]{filter['name']}:[/bold]")
-        console.print(f"\tBrightness: {filter['brightness']}")
-        console.print(f"\tContrast: {filter['contrast']}")
-        console.print(f"\tColor: {filter['color']}")
-        console.print(f"\tSharpness: {filter['sharpness']}")
+        logger.info(f"[bold]{filter['name']}:[/bold]")
+        logger.info(f"\tBrightness: {filter['brightness']}")
+        logger.info(f"\tContrast: {filter['contrast']}")
+        logger.info(f"\tColor: {filter['color']}")
+        logger.info(f"\tSharpness: {filter['sharpness']}")

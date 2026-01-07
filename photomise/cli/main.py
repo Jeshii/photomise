@@ -6,6 +6,7 @@ import typer
 
 from photomise.cli import database, post, process, settings
 from photomise.utilities.logging import setup_logging
+import logging as _logging
 from photomise.utilities.project import fix_dir, get_project_db, sanitize_text
 
 app = typer.Typer(help="Photomise - Photo processing for social media posting")
@@ -20,8 +21,8 @@ app.add_typer(
     help="Pre-process the photos in preparation for posting.",
 )
 
-# Basic initialization
-logger, console = setup_logging()
+# Basic initialization with default console level
+logger = setup_logging()
 
 
 @app.command()
@@ -58,7 +59,7 @@ def init(
     try:
         gdb = database.SharedDB()
     except Exception as e:
-        logger.fatal(f"Error: {e}")
+        logger.fatal(e)
         typer.Exit(1)
 
     projects = gdb.projects
@@ -120,10 +121,21 @@ def init(
 
 
 @app.callback()
-def main():
-    """
-    Photomise - Photo processing for social media posting.
-    """
+def main(
+    log_level: str = typer.Option(
+        "INFO",
+        "--log-level",
+        help="Console log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
+    )
+):
+    """Photomise - Photo processing for social media posting."""
+    # Map provided log level to logging constant and reconfigure console handler
+    level_name = (log_level or "INFO").upper()
+    level = getattr(_logging, level_name, None)
+    if level is None or not isinstance(level, int):
+        raise typer.BadParameter(f"Invalid log level: {log_level}")
+    # Re-initialize logging with chosen console level
+    setup_logging(console_level=level)
 
 
 if __name__ == "__main__":

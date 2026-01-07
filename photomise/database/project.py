@@ -11,7 +11,7 @@ from photomise.utilities.location import Location
 from photomise.utilities.logging import setup_logging
 from photomise.utilities.photo import Photo
 
-logger, console = setup_logging()
+logger = setup_logging()
 
 
 class ProjectDB(DatabaseManager):

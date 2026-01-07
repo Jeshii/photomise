@@ -10,7 +10,7 @@ app = typer.Typer()
 app.add_typer(filters.app, name="filters", help="Filter settings")
 app.add_typer(locations.app, name="locations", help="Location settings")
 
-logger, console = setup_logging()
+logger = setup_logging()
 
 
 @app.command()
@@ -51,7 +51,7 @@ def project(
     try:
         gdb = SharedDB()
     except Exception as e:
-        logger.fatal(f"Error: {e}")
+        logger.fatal(e)
         typer.Exit(1)
 
     projects = gdb.projects
@@ -96,7 +96,7 @@ def project(
 
     # Inform the user where to place photos for processing
     assets_path = f"{project_path}/assets"
-    console.print(
+    logger.info(
         f"\nTo process photos for project '{project}', place images under: [bold]{assets_path}[/bold]"
     )
 
@@ -110,7 +110,7 @@ def interactive():
     try:
         gdb = SharedDB()
     except Exception as e:
-        logger.fatal(f"Error: {e}")
+        logger.fatal(e)
         typer.Exit(1)
     setting_choices = {
         "Filters": "filters",
@@ -147,9 +147,9 @@ def interactive():
             updated = locations.edit(location_name=selection, rename=True)
 
         if updated:
-            console.print(f"""{setting.title()} "{updated}" settings saved.""")
+            logger.info(f"{setting.title()} \"{updated}\" settings saved.")
         else:
-            console.print(f"""Error saving {setting} settings.""")
+            logger.error(f"Error saving {setting} settings.")
 
     @app.command()
     def clean_radius(
@@ -160,7 +160,7 @@ def interactive():
         try:
             gdb = SharedDB()
         except Exception as e:
-            logger.fatal(f"Error: {e}")
+            logger.fatal(e)
             typer.Exit(1)
 
         projects = gdb.projects
@@ -178,13 +178,9 @@ def interactive():
         if settings.get("event_radius_meters") is not None:
             settings.pop("event_radius_meters", None)
             pdb.update_settings(settings)
-            console.print(
-                f"Removed event_radius_meters from project settings for {project}"
-            )
+            logger.info(f"Removed event_radius_meters from project settings for {project}")
         else:
-            console.print(
-                f"No event_radius_meters found in project settings for {project}"
-            )
+            logger.info(f"No event_radius_meters found in project settings for {project}")
 
         pdb.close()
         gdb.close()
@@ -195,30 +191,28 @@ def interactive():
         try:
             gdb = SharedDB()
         except Exception as e:
-            logger.fatal(f"Error: {e}")
+            logger.fatal(e)
             typer.Exit(1)
 
         shared_proj = gdb.get_project(project)
         if not shared_proj:
-            console.print(f"No shared project entry found for {project}")
+            logger.info(f"No shared project entry found for {project}")
             gdb.close()
             return
 
         # Copy any keys other than name/path into the project DB
         extras = {k: v for k, v in shared_proj.items() if k not in ("name", "path")}
         if not extras:
-            console.print(
-                f"No project-specific keys present in shared DB for {project}"
-            )
+            logger.info(f"No project-specific keys present in shared DB for {project}")
             gdb.close()
             return
 
         try:
             gdb.migrate_project_settings(project, extras)
-            console.print(
+            logger.info(
                 f"Migrated keys into project DB for {project}: {', '.join(extras.keys())}"
             )
         except Exception as e:
-            console.print(f"Migration failed: {e}")
+            logger.error(f"Migration failed: {e}")
 
         gdb.close()

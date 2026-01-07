@@ -11,11 +11,12 @@ from photomise.database.shared import SharedDB
 from photomise.utilities.constants import LOG_DIR
 from photomise.utilities.event import Event
 from photomise.utilities.logging import setup_logging
+from rich.console import Console
 from photomise.utilities.project import convert_to_absolute_path, set_project
 from photomise.utilities.shared import format_file_size
 
 app = typer.Typer()
-logger, console = setup_logging()
+logger = setup_logging()
 
 
 @app.command()
@@ -34,7 +35,7 @@ def prettify(
             gdb.close()
 
     except Exception as e:
-        logger.fatal(f"Error: {e}")
+        logger.fatal(e)
         typer.Exit(1)
 
 
@@ -96,7 +97,7 @@ def stats(
             "filter_count": gdb.count_filters(),
         }
         if json:
-            console.print(dumps(data, indent=4, ensure_ascii=False))
+            logger.info(dumps(data, indent=4, ensure_ascii=False))
         else:
             table = Table(title="Database Statistics")
 
@@ -110,9 +111,9 @@ def stats(
                 for metric, value in stats.items():
                     table.add_row(db_name, metric.replace("_", " ").title(), str(value))
 
-            console.print(table)
+            Console().print(table)
     except Exception as e:
-        logger.fatal(f"Error: {e}")
+        logger.fatal(e)
         typer.Exit(1)
 
 
@@ -131,7 +132,7 @@ def export_gpx(
     try:
         pdb, project_path = set_project(project)
     except Exception as e:
-        logger.fatal(f"Error: {e}")
+        logger.fatal(e)
         raise typer.Exit(1)
 
     # Gather events
@@ -179,4 +180,4 @@ def export_gpx(
     with open(out_file, "w", encoding="utf-8") as fh:
         fh.write(pretty)
 
-    console.print(f"Exported {len(events)} event(s) to {out_file}")
+    logger.info(f"Exported {len(events)} event(s) to {out_file}")

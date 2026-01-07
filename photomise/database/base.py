@@ -6,7 +6,7 @@ from tinydb.table import Table
 
 from photomise.utilities.logging import setup_logging
 
-logger, console = setup_logging()
+logger = setup_logging()
 
 
 class DatabaseManager:

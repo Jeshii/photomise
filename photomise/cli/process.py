@@ -33,7 +33,7 @@ from photomise.utilities.project import (
 from photomise.utilities.shared import make_min_max_prompt
 
 app = typer.Typer()
-logger, console = setup_logging()
+logger = setup_logging()
 
 
 @app.command()
@@ -79,12 +79,11 @@ def images(
         )
         typer.Exit(1)
 
-    console.print(f"Found {len(non_hidden_files)} files in {photos_path} to process.")
+    logger.info(f"Found {len(non_hidden_files)} files in {photos_path} to process.")
 
     progress = Progress(
         "[progress.description]{task.description}",
         "[progress.bar]{task.completed}/{task.total}",
-        console=console,
         transient=False,
     )
     progress.start()
@@ -195,7 +194,7 @@ def images(
                             photo_record.color = filter.get("color", 1.0)
                             photo_record.sharpness = filter.get("sharpness", 1.0)
                 progress.start()
-                logging.debug(f"[{project}] Photo info: {photo_record}")
+                logger.debug(f"[{project}] Photo info: {photo_record}")
 
         if error:
             progress.start()
@@ -281,8 +280,8 @@ def locations(
         file_path = f"{dir}/{file}"
         relative_path = convert_to_relative_path(file_path, main_path)
 
-        console.print()
-        console.print(f"Checking {file_path}")
+        logger.info("")
+        logger.info(f"Checking {file_path}")
 
         # Check for duplicates
         duplicate_events = pdb.find_events_with_photo(relative_path)
@@ -296,7 +295,7 @@ def locations(
 
             date_object = extract_datetime(exif_tags)
         except piexif.InvalidImageDataError:
-            logger.warning("Invalid image data")
+            logger.warning(f"Invalid image data in file: {file_path}")
             continue
         except Exception as e:
             logger.error(f"Error extracting exif info: {e}")
@@ -330,11 +329,11 @@ def locations(
                         }
                         exif_bytes = piexif.dump(exif_dict)
                         piexif.insert(exif_bytes, file_path)
-                        console.print("Date saved to exif data.")
+                        logger.info("Date saved to exif data.")
                     else:
-                        console.print("Only using for location finding...")
+                        logger.info("Only using for location finding...")
                 else:
-                    console.print("Skipping...")
+                    logger.info("Skipping...")
 
         if not date_object:
             logging.warning("No date found for this photo. Skipping...")
@@ -356,14 +355,14 @@ def locations(
                     event_radius_meters = 500
                     radius_source = "default"
             event_radius_km = event_radius_meters / 1000.0
-            console.print(
+            logger.debug(
                 f"Using event_radius_meters={event_radius_meters} (source={radius_source})"
             )
             location = gdb.find_location(lat, lon, max_distance_km=event_radius_km)
             if location:
-                console.print(f"Location Name: {location.name}")
-                console.print(f"Photo Geodata: Latitude: {lat}, Longitude: {lon}")
-                console.print(
+                logger.info(f"Location Name: {location.name}")
+                logger.info(f"Photo Geodata: Latitude: {lat}, Longitude: {lon}")
+                logger.info(
                     f"Location Geodata: Latitude: {location.latitude}, Longitude: {location.longitude}"
                 )
             else:
@@ -372,9 +371,9 @@ def locations(
 
                     encoded_lat = quote(str(lat))
                     encoded_lon = quote(str(lon))
-                    console.print(
-                        f"[link={link}{encoded_lat},{encoded_lon}]Helper link[/link]"
-                    )
+                    from photomise.utilities.logging import log_link
+
+                    log_link(logger, f"{link}{encoded_lat},{encoded_lon}")
                 location_name = inquirer.text(
                     f"Please enter a location name for {lat},{lon}",
                     validate=lambda x: len(x.strip()) > 0,
@@ -398,7 +397,7 @@ def locations(
                     else:
                         lat = float(lat)
                 except ValueError:
-                    console.print("Invalid latitude format.")
+                    logger.warning("Invalid latitude format.")
                     continue
 
                 lon = inquirer.text("Longitude").execute()
@@ -410,7 +409,7 @@ def locations(
                     else:
                         lon = float(lon)
                 except ValueError:
-                    console.print("Invalid longitude format.")
+                    logger.warning("Invalid longitude format.")
                     continue
 
                 proj_settings = pdb.settings or {}
@@ -429,15 +428,17 @@ def locations(
                         event_radius_meters = 500
                         radius_source = "default"
                 event_radius_km = event_radius_meters / 1000.0
-                console.print(
+                logger.info(
                     f"Using event_radius_meters={event_radius_meters} (source={radius_source})"
                 )
                 location = gdb.find_location(lat, lon, max_distance_km=event_radius_km)
                 if location:
-                    console.print(f"Location: {location.name}")
+                    logger.info(f"Location: {location.name}")
                 else:
                     if link:
-                        console.print(f"[link={link}{lat},{lon}]Helper link[/link]")
+                        from photomise.utilities.logging import log_link
+
+                        log_link(logger, f"{link}{lat},{lon}")
                     location = Location(
                         latitude=lat,
                         longitude=lon,
@@ -461,10 +462,10 @@ def locations(
                 exif_bytes = piexif.dump(exif_dict)
                 piexif.insert(exif_bytes, file_path)
             else:
-                console.print("Skipping...")
+                logger.info("Skipping...")
                 continue
 
-        console.print(f"Taken: {date_object.format('YYYY-MM-DD HH:mm:ss')}")
+        logger.info(f"Taken: {date_object.format('YYYY-MM-DD HH:mm:ss')}")
         event, event_same = pdb.same_event(date_object, location)
         logger.debug(f"[{project}] Event: {event}")
         logger.debug(f"[{project}] Event Same? {event_same}")
@@ -475,7 +476,7 @@ def locations(
 
         if item_duplicate(pdb, gdb, date_object, lat, lon):
             logging.info(f"[{project}] Skipping duplicate: {date_object}")
-            console.print("This item appears to be a duplicate and will be skipped.")
+            logger.info("This item appears to be a duplicate and will be skipped.")
             continue
 
         if not event_same:
@@ -503,7 +504,7 @@ def locations(
             if relative_path not in event.photos:
                 pdb.upsert_event(event, relative_path)
             else:
-                console.print("This photo has already been added to this event.")
+                logger.info("This photo has already been added to this event.")
         else:
             event.photos = [relative_path]
             event.longitude = lon
@@ -561,7 +562,7 @@ def rank(
             typer.Exit(1)
         if len(photos) <= greater_than:
             continue
-        console.print(f"There are {len(photos)} photos in {event_name}.")
+        logger.info(f"There are {len(photos)} photos in {event_name}.")
         if view:
             for photo_path in photos:
                 photo_record = pdb.get_photo(photo_path)
@@ -596,10 +597,10 @@ def rank(
 
             rankings = pdb.get_rankings_by_event(event_name)
             logging.debug(f"[{project}] Rankings for {event_name}: {rankings}")
-            console.print(f"Rankings for {event_name}:")
+            logger.info(f"Rankings for {event_name}:")
             for rank in rankings:
                 absolute_path_rank = convert_to_absolute_path(rank["path"], main_path)
-                console.print(f"\tRank {rank['rank']}: {absolute_path_rank}")
+                logger.info(f"\tRank {rank['rank']}: {absolute_path_rank}")
                 if view:
                     photo_record = pdb.get_photo(photo_path)
                     photo_record.compress_image(
@@ -641,14 +642,14 @@ def prune(
     for event in events.values():
         logging.debug(f"[{project}] Event: {event}")
         if all:
-            console.print(f"{event.name}:")
+            logger.info(f"{event.name}:")
         if not no_event:
             try:
                 photos = event.photos
             except KeyError:
                 logging.fatal("Event not found.")
                 typer.Exit(1)
-        console.print(f"There are {len(photos)} photos in this event.")
+        logger.info(f"There are {len(photos)} photos in this event.")
         if view:
             for photo in photos:
                 photo_record = pdb.get_photo(photo)
@@ -661,7 +662,7 @@ def prune(
                 message=f"Would you like to remove this photo - {convert_to_absolute_path(photo_record, main_path)} - from this event"
             ).execute():
                 pdb.remove_photo_from_event(event, photo_record)
-                console.print(f"Photo removed from {event.name}.")
+                logger.info(f"Photo removed from {event.name}.")
                 logger.info(f"[{project}] Photo removed from {event.name}.")
                 if inquirer.confirm(
                     message="Would you like to remove the file as well?"
@@ -673,8 +674,6 @@ def prune(
                         convert_to_absolute_path(photo_record, main_path),
                         os.path.join(trash_folder, os.path.basename(photo_record)),
                     )
-                    console.print(
-                        f"Photo removed completely and file moved to {trash_folder}."
-                    )
+                    logger.info(f"Photo removed completely and file moved to {trash_folder}.")
 
     pdb.close()

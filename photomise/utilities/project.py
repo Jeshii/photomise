@@ -10,7 +10,7 @@ from photomise.utilities.event import Event
 from photomise.utilities.location import sanitize_text
 from photomise.utilities.logging import setup_logging
 
-logger, console = setup_logging()
+logger = setup_logging()
 
 
 def convert_to_relative_path(file_path: str, project_path: str) -> str:
@@ -48,7 +48,7 @@ def set_project(
         try:
             gdb = SharedDB()
         except Exception as e:
-            logger.fatal(f"Error: {e}")
+            logger.fatal(e)
             typer.Exit(1)
 
         projects = gdb.projects
@@ -166,8 +166,8 @@ def handle_duplicate_events(
             f"Photo {photo_path} appeared in multiple events and thus the events were merged."
         )
     else:
-        console.print(
-            f"\n[yellow]Warning:[/yellow] Photo {photo_path} appears in multiple events..."
+        logger.warning(
+            f"Photo {photo_path} appears in multiple events..."
         )
         for idx, event in enumerate(events, 1):
             local_date = (
@@ -175,7 +175,7 @@ def handle_duplicate_events(
                 .in_tz(pendulum.local_timezone())
                 .format("YYYY-MM-DD")
             )
-            console.print(f"{idx}. {event.name} ({local_date})")
+            logger.info(f"{idx}. {event.name} ({local_date})")
 
         keep_idx = inquirer.select(
             message="Which event should keep this photo?",

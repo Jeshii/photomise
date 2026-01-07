@@ -5,7 +5,7 @@ from photomise.utilities.constants import SHARED_DB_PATH
 from photomise.utilities.location import Location
 from photomise.utilities.logging import setup_logging
 
-logger, console = setup_logging()
+logger = setup_logging()
 
 
 class SharedDB(DatabaseManager):
