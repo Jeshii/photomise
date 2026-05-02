@@ -141,9 +141,9 @@ def interactive():
         selection = items.get(choice)
 
         if setting == "filters":
-            updated = filters.edit(filter_name=selection, rename=True)
+            updated = filters.edit(filter_name=selection)
         else:
-            updated = locations.edit(location_name=selection, rename=True)
+            updated = locations.edit(location_name=selection)
 
         if updated:
             logger.info(f"{setting.title()} \"{updated}\" settings saved.")

@@ -13,11 +13,13 @@ app = typer.Typer()
 @app.command()
 def edit(
     filter_name: str = typer.Argument(..., help="Filter name"),
-    brightness: float = typer.Option(None, "--brightness", "-b", help="Brightness"),
-    contrast: float = typer.Option(None, "--contrast", "-con", help="Contrast"),
-    color: float = typer.Option(None, "--color", "-col", help="Color"),
-    sharpness: float = typer.Option(None, "--sharpness", "-s", help="Sharpness"),
-    rename: bool = typer.Option(False, "--rename", "-r", help="Rename filter"),
+    brightness: float | None = typer.Option(None, "--brightness", "-b", help="Brightness"),
+    contrast: float | None = typer.Option(None, "--contrast", "-con", help="Contrast"),
+    color: float | None = typer.Option(None, "--color", "-col", help="Color"),
+    sharpness: float | None = typer.Option(None, "--sharpness", "-s", help="Sharpness"),
+    name: str | None = typer.Option(
+        None, "--name", "-n", help="Provide a new name for the filter (non-interactive)"
+    ),
 ):
     """Edit filter settings."""
     try:
@@ -25,11 +27,11 @@ def edit(
     except Exception as e:
         logger.fatal(e)
         typer.Exit(1)
-    # Handle rename first (if requested)
-    if rename:
-        new_name = prompt("Enter new filter name:")
+    # Handle rename first: prefer --new-name if provided, otherwise prompt when --rename set
+    # Only treat new_name as provided when it's a real string (avoid Typer's OptionInfo defaults)
+    if isinstance(name, str) and name:
         try:
-            rename_result = gdb.rename_filter(filter_name, new_name)
+            rename_result = gdb.rename_filter(filter_name, name)
             if not rename_result:
                 logger.error(f"Unable to rename filter {filter_name}.")
                 return
@@ -49,16 +51,16 @@ def edit(
             "sharpness": 1.0,
         }
 
-    if not min_max_check(brightness):
+    if isinstance(brightness, (int, float)) and not min_max_check(brightness):
         brightness = make_min_max_prompt(
             "Adjust brightness:",
             filter.get("brightness", 1.0),
         )
-    if not min_max_check(contrast):
+    if isinstance(contrast, (int, float)) and not min_max_check(contrast):
         contrast = make_min_max_prompt("Adjust contrast:", filter.get("contrast", 1.0))
-    if not min_max_check(color):
+    if isinstance(color, (int, float)) and not min_max_check(color):
         color = make_min_max_prompt("Adjust color:", filter.get("color", 1.0))
-    if not min_max_check(sharpness):
+    if isinstance(sharpness, (int, float)) and not min_max_check(sharpness):
         sharpness = make_min_max_prompt(
             "Adjust sharpness:", filter.get("sharpness", 1.0)
         )
