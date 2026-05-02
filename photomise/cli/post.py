@@ -2,16 +2,25 @@ import os
 import plistlib
 import random as rand
 import sys
+import xml.etree.ElementTree as ET
 from enum import Enum
+from xml.dom import minidom
 
 import pendulum
 import typer
 from atproto import Client, models
+from typer import prompt
 from InquirerPy import inquirer
 
-from photomise.utilities import logging
 from photomise.database.shared import SharedDB
-from photomise.utilities.exif import compress_image, get_image_aspect_ratio
+from photomise.utilities.logging import setup_logging, get_log_dir
+from photomise.utilities.photo import (
+    Photo,
+    extract_datetime,
+    extract_exif_info,
+    extract_gps,
+    get_image_aspect_ratio,
+)
 from photomise.utilities.post import get_bluesky_user, get_password_from_keyring
 from photomise.utilities.project import (
     convert_to_absolute_path,
@@ -21,7 +30,7 @@ from photomise.utilities.project import (
 
 app = typer.Typer()
 
-logger, console = logging.setup_logging()
+logger = setup_logging()
 
 
 @app.command()
@@ -60,11 +69,12 @@ def atprotocol(
 
     if not random:
         event_name = inquirer.select(
-            message="Choose an event to post", choices=events.keys()
+            message="Choose an event to post", choices=list(events.keys())
         ).execute()
     else:
         random_event = rand.choice(list(events.values()))
-        event_name = random_event["event"]
+        event_name = random_event.name
+        logger.debug(f"[{project}] Random event chosen: {event_name}")
 
     password = get_password_from_keyring(logger, user)
     try:
@@ -82,7 +92,8 @@ def atprotocol(
     image_aspect_ratios = []
     photo_list = []
     logger.debug(f"Checking for photos in: {events[event_name]}")
-    if len(events[event_name]["photos"]) > 4:
+    event_to_post = events[event_name]
+    if len(event_to_post.photos) > 4:
         ranking = pdb.get_rankings_by_event(event_name)
         if not ranking:
             logger.fatal("Too many photos to post to Bluesky")
@@ -94,7 +105,7 @@ def atprotocol(
             if len(photo_list) >= 4:
                 break
     else:
-        photo_list = events[event_name]["photos"]
+        photo_list = event_to_post.photos
 
     for path in photo_list:
         full_path = convert_to_absolute_path(path, main_path)
@@ -110,38 +121,32 @@ def atprotocol(
             )
 
             photo_entry = pdb.get_photo(path)
-            if photo_entry:
-                rotation_angle = photo_entry.get("rotation", 0)
-                quality = photo_entry.get("quality", pdb.settings.get("quality", 80))
-                description = photo_entry.get("description", f"{event_name}-{path}")
-                flavor = photo_entry.get("flavor", "")
-                max_dimension = photo_entry.get(
-                    "max_dimension", pdb.settings.get("max_dimension", 1200)
-                )
-            else:
-                rotation_angle = 0
-                quality = pdb.settings.get("quality", 80)
-                description = ""
-                max_dimension = pdb.settings.get("max_dimension", 1200)
+            if not photo_entry:
+                logger.debug(f"[{project}] Photo {path} not found in database")
+                photo_entry = Photo(path, quality=pdb.settings.get("quality", 80))
+            max_dimension = pdb.settings.get("max_dimension", 1200)
+            if not photo_entry.description:
+                photo_entry.description = f"{event_name}-{path}"
             try:
-                compressed_image = compress_image(
-                    full_path,
-                    rotation_angle=rotation_angle,
-                    quality=quality,
+                compressed_image, e = photo_entry.compress_image(
+                    project_path=main_path,
                     show=view,
                     max_dimension=max_dimension,
                 )
-
-                images.append(compressed_image)
-                image_alts.append(description)
-                flavors.append(flavor)
+                if not e:
+                    images.append(compressed_image)
+                    image_alts.append(photo_entry.description)
+                    flavors.append(photo_entry.flavor)
+                else:
+                    logger.fatal(f"Error compressing image: {e}")
+                    return
             except Exception as e:
                 logger.fatal(f"Error compressing image: {e}")
                 return
 
     if not text:
         flavor_text = "\n\n".join(filter(None, flavors))
-        text = f"{events[event_name]['location']} ({pendulum.from_timestamp(events[event_name]['date']).format('YYYY-MMM-DD')})"
+        text = f"{event_to_post.location} ({pendulum.from_timestamp(event_to_post.date).format('YYYY-MMM-DD')})"
         if flavor_text:
             text = f"{text}\n\n{flavor_text}"
 
@@ -184,19 +189,26 @@ class SupportedProtocols(str, Enum):
 @app.command()
 def plist(
     project: str = typer.Argument(..., help="Project name or path"),
-    output_path: str = typer.Option(..., "-o","--output", prompt="Output path"),
-    platform: SupportedProtocols = typer.Option(SupportedProtocols.atprotocol, "-p","--protocol",case_sensitive=False),
-    schedule: str = typer.Option(..., "-s","--schedule", prompt="Cron-like schedule in mm hh format (e.g. '15 11,23')"),
+    output_path: str = typer.Option(..., "-o", "--output", prompt="Output path"),
+    platform: SupportedProtocols = typer.Option(
+        SupportedProtocols.atprotocol, "-p", "--protocol", case_sensitive=False
+    ),
+    schedule: str = typer.Option(
+        ...,
+        "-s",
+        "--schedule",
+        prompt="Cron-like schedule in mm hh format (e.g. '15 11,23')",
+    ),
 ):
     """Export a plist file for use with launchd for scheduled posting."""
-    
+
     try:
         gdb = SharedDB()
         projects = gdb.projects
         if project not in projects:
             logger.fatal(f"Project {project} not found in global database.")
             typer.Exit(1)
-        
+
         project_path = projects[project]
     except ValueError:
         project_path = project
@@ -206,22 +218,19 @@ def plist(
             logger.fatal(f"Project path {project_path} not found.")
             typer.Exit(1)
     except Exception as e:
-        logger.fatal(f"Error: {e}")
+        logger.fatal(e)
         typer.Exit(1)
 
-    log_dir = logging.get_log_dir()
-    
+    log_dir = get_log_dir()
+
     executable_path = sys.executable
 
     # Parse cron string
     try:
         minute, hours, *_ = schedule.split()
         calendar_intervals = []
-        for hour in hours.split(','):
-            calendar_intervals.append({
-                "Hour": int(hour),
-                "Minute": int(minute)
-            })
+        for hour in hours.split(","):
+            calendar_intervals.append({"Hour": int(hour), "Minute": int(minute)})
     except ValueError as e:
         logger.fatal(f"Invalid cron string format: {e}")
         typer.Exit(1)
@@ -232,7 +241,7 @@ def plist(
         "ProgramArguments": [
             "/bin/sh",
             "-c",
-            f'"{executable_path}" "{script_dir}" post {platform.value} {project_path} -r' # "{executable_path}" "{script_dir}" init {project} -p "{project_path}" && 
+            f'"{executable_path}" "{script_dir}" post {platform.value} {project_path} -r',  # "{executable_path}" "{script_dir}" init {project} -p "{project_path}" &&
         ],
         "StartCalendarInterval": calendar_intervals,
         "StandardOutPath": f"{log_dir}/photomise-{project}.out",
@@ -245,4 +254,115 @@ def plist(
     with open(output_file_path, "wb") as plist_file:
         plistlib.dump(plist_data, plist_file)
 
-    console.print(f"Plist file exported to {output_path}. Run [bold]launchctl load {output_file_path}[/bold] to schedule the task.")
+    logger.info(
+        f"""Plist file exported to {output_path}.
+Run [bold]launchctl load {output_file_path}[/bold] to schedule the task.
+Run [bold]launchctl unload {output_file_path}[/bold] to remove the schedule.
+Run [bold]launchctl list | grep {project}[/bold] to check the status of the scheduled task."""
+    )
+
+
+@app.command()
+def gpx(
+    project: str = typer.Argument(..., help="Project name or path"),
+    event: str = typer.Option(None, "--event", "-e", help="Event name to export"),
+    output: str = typer.Option(
+        ".", "--output", "-o", help="Output GPX file or directory"
+    ),
+):
+    """Export a GPX track for an event using photo timestamps and GPS data."""
+
+    # Set project
+    pdb, main_path = set_project(project)
+
+    events = pdb.get_events()
+    if not events:
+        logger.fatal("No events found. Please run photomise first.")
+        return
+
+    if not event:
+        event_name = inquirer.select(
+            message="Choose an event to export", choices=list(events.keys())
+        ).execute()
+    else:
+        event_name = event
+
+    if event_name not in events:
+        logger.fatal(f"Event {event_name} not found")
+        return
+
+    ev = events[event_name]
+
+    # Collect photo GPS/timestamps
+    trackpoints = []
+    for rel_path in ev.photos:
+        full_path = convert_to_absolute_path(rel_path, main_path)
+        if not os.path.exists(full_path):
+            logger.warning(f"Photo not found: {full_path}")
+            continue
+        try:
+            tags = extract_exif_info(full_path)
+            lat, lon = extract_gps(tags)
+            dt = extract_datetime(tags)
+            if lat is None or lon is None or dt is None:
+                logger.debug(f"Skipping photo without GPS or timestamp: {full_path}")
+                continue
+            trackpoints.append((dt, lat, lon))
+        except Exception as e:
+            logger.warning(f"Error reading EXIF from {full_path}: {e}")
+
+    if not trackpoints:
+        logger.fatal("No usable photo GPS/timestamp data found for event.")
+        return
+
+    # Sort by time
+    trackpoints.sort(key=lambda x: x[0])
+
+    # Build GPX with a single track
+    gpx = ET.Element("gpx", version="1.1", creator="photomise")
+    trk = ET.SubElement(gpx, "trk")
+    name_el = ET.SubElement(trk, "name")
+    name_el.text = ev.name
+    trkseg = ET.SubElement(trk, "trkseg")
+
+    for dt, lat, lon in trackpoints:
+        trkpt = ET.SubElement(trkseg, "trkpt", lat=str(lat), lon=str(lon))
+        time_el = ET.SubElement(trkpt, "time")
+        try:
+            time_el.text = dt.to_iso8601_string()
+        except Exception:
+            time_el.text = str(dt)
+
+    rough_string = ET.tostring(gpx, "utf-8")
+    reparsed = minidom.parseString(rough_string)
+    pretty = reparsed.toprettyxml(indent="  ")
+
+    # If a specific GPX file was provided, use it. Otherwise determine the
+    # directory to write into. When the user leaves the default (`.`), write
+    # into a `post` folder inside the project.
+    if output.endswith(".gpx") or output.endswith(".GPX"):
+        out_file = output
+        out_dir = os.path.dirname(os.path.abspath(out_file)) or "."
+    else:
+        if output == ".":
+            out_dir = os.path.join(main_path, "post")
+        else:
+            out_dir = output.rstrip('/')
+
+        # Create the directory and notify the user if we created it.
+        dir_existed = os.path.exists(out_dir)
+        try:
+            os.makedirs(out_dir, exist_ok=True)
+        except Exception as e:
+            logger.fatal(f"Could not create output directory {out_dir}: {e}")
+            return
+
+        if not dir_existed:
+            logger.info(f"Created directory {out_dir} for GPX output")
+
+        out_file = f"{out_dir}/{pdb.project_name}-{sanitize_text(ev.name)}.gpx"
+
+    with open(out_file, "w", encoding="utf-8") as fh:
+        fh.write(pretty)
+
+    logger.info(f"Exported {len(trackpoints)} trackpoints to {out_file}")

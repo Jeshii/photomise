@@ -1,9 +1,13 @@
-# Ignore all files ending with .json
+# Ignore all files with certain endings
 *.json
 *.ini
+*.bak
+*.log
+*.toml
 
-# Ignore ds store
+# Ignore dot stuff
 .DS_Store
+.vscode/
 
 # Ignore all files in the directory
 __pycache__/

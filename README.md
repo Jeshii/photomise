@@ -3,7 +3,7 @@ Photomise is a photo pre-processor to help prepare groups of photos (projects) b
 Currently supported:
 - Locations
 - Events
-- Descriptions for the visually impared
+- Alt text
 - Flavor text
 - Image Processing/Compression
   - Quality

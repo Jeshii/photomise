@@ -2,15 +2,18 @@ from geopy.distance import great_circle
 
 from photomise.database.base import DatabaseManager
 from photomise.utilities.constants import SHARED_DB_PATH
+from photomise.utilities.location import Location
 from photomise.utilities.logging import setup_logging
 
-logger, console = setup_logging()
+logger = setup_logging()
+
 
 class SharedDB(DatabaseManager):
     def __init__(self):
         super().__init__(SHARED_DB_PATH)
         self._locations = self.get_table("locations")
         self._filters = self.get_table("filters")
+        self._projects = self.get_table("projects")
 
     @property
     def projects(self):
@@ -19,7 +22,9 @@ class SharedDB(DatabaseManager):
             logger.debug(f"Project: {v}")
             config[v["name"]] = v["path"]
         if not config:
-            raise ValueError("No projects found in global database - please run photomise init.")
+            raise ValueError(
+                "No projects found in global database - please run photomise init."
+            )
         return config
 
     def get_items(self, table) -> dict:
@@ -33,6 +38,9 @@ class SharedDB(DatabaseManager):
     def get_filter(self, filter_name: str) -> dict:
         filter = self._filters.get(self._query.name == filter_name)
         return filter
+
+    def count_filters(self) -> int:
+        return len(self._filters)
 
     def get_filters_all(self) -> dict:
         return self._filters.all()
@@ -53,46 +61,78 @@ class SharedDB(DatabaseManager):
             return params["name"]
         else:
             return False
-        
+
+    def rename_filter(self, old_name: str, new_name: str) -> str:
+        updated = self._filters.update(
+            {"name": new_name},
+            self._query.name == old_name,
+        )
+        if updated:
+            return new_name
+        else:
+            return False
+
     def upsert_project(self, params: dict) -> str:
-        updated = self._filters.upsert(
-            {
-                "name": params["name"],
-                "path": params["brightness"],
-                "contrast": params["contrast"],
-                "color": params["color"],
-                "sharpness": params["sharpness"],
-            },
-            self._query.name == params["name"],
-        )
+        # Only store minimal project info in the shared DB (name and path).
+        record = {"name": params.get("name"), "path": params.get("path")}
+        updated = self._projects.upsert(record, self._query.name == record["name"])
 
-        if updated:
-            return params["name"]
-        else:
+        if not updated:
             return False
 
-    def get_location(self, location_name: str) -> dict:
-        return self._locations.get(self._query.name == location_name)
+        # If extra project-specific settings were provided (e.g. radius/time-delta),
+        # they should live in the per-project DB for portability. Return the
+        # project name and let callers optionally run migration to move the
+        # additional keys into the project DB.
+        return record["name"]
 
-    def get_location_coord(self, lat: float, lon: float) -> dict:
-        return self._locations.get(
-            (self._query.latitude == lat) & (self._query.longitude == lon)
+    def migrate_project_settings(self, project_name: str, params: dict):
+        """Move project-specific settings from a params dict into the per-project DB.
+
+        This helper will open the project DB (if path available in shared DB) and
+        update the project's settings with any keys other than name/path.
+        """
+        # Determine project path from shared table
+        project_entry = self._projects.get(self._query.name == project_name)
+        if not project_entry:
+            raise ValueError("Project not found in shared DB")
+
+        project_path = project_entry.get("path")
+        # Lazy import to avoid circular imports at module load
+        from photomise.utilities.project import get_project_db
+
+        pdb = get_project_db(project_name, project_path)
+        project_settings = pdb.settings or {}
+        # Copy any keys other than name/path into project settings
+        for k, v in params.items():
+            if k in ("name", "path"):
+                continue
+            project_settings[k] = v
+
+        pdb.update_settings(project_settings)
+        pdb.close()
+
+    def count_locations(self) -> int:
+        return len(self._locations)
+
+    def get_locations_all(self) -> list:
+        """Return all location records from the locations table."""
+        return self._locations.all()
+
+    def get_location(self, location_name: str) -> Location | None:
+        record = self._locations.get(self._query.name == location_name)
+        if not record:
+            return None
+        return Location.from_dict(record)
+
+    def get_project(self, project_name: str) -> dict | None:
+        """Return the full project record from the shared projects table."""
+        return self._projects.get(self._query.name == project_name)
+
+    def upsert_location(self, location: Location) -> str:
+        return self._locations.upsert(
+            location.to_dict(), self._query.name == location.name
         )
-
-    def upsert_location(self, params: dict) -> str:
-        updated = self._locations.upsert(
-            {
-                "name": params["location_name"],
-                "latitude": params["latitude"],
-                "longitude": params["longitude"],
-            },
-            self._query.name == params["location_name"],
-        )
-
-        if updated:
-            return params["location_name"]
-        else:
-            return False
 
     def get_filter_from_values(self, params: dict) -> str:
         for filter in self._filters.all():
@@ -107,7 +147,7 @@ class SharedDB(DatabaseManager):
 
     def find_location(
         self, latitude: float, longitude: float, max_distance_km: float = 0.5
-    ):
+    ) -> Location:
         closest_location = None
         closest_distance = max_distance_km
 
@@ -116,7 +156,7 @@ class SharedDB(DatabaseManager):
             distance = great_circle((latitude, longitude), location_coords).kilometers
 
             if distance < closest_distance:
-                closest_location = item["name"]
+                closest_location = Location.from_dict(item)
                 closest_distance = distance
 
         return closest_location

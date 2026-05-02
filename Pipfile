@@ -7,18 +7,20 @@ name = "pypi"
 pendulum = "*"
 geopy = "*"
 rich = "*"
-atproto = "*"
-keyring = "*"
 piexif = "*"
 pillow = "*"
 tinydb = "*"
 typer = "*"
-photomise = {file = ".", editable = true}
+pillow-heif = "*"
+pyspellchecker = "*"
+keyring = "*"
+atproto = "*"
 
 [dev-packages]
 pytest = "*"
 black = "*"
 isort = "*"
+ruff = "*"
 
 [requires]
 python_version = "3.12"

@@ -1,16 +1,21 @@
-from pathlib import Path
 import os
+from typing import List
 
 import pendulum
+from tinydb.queries import Query
 
 from photomise.database.base import DatabaseManager
+from photomise.database.shared import SharedDB
+from photomise.utilities.event import Event
+from photomise.utilities.location import Location
 from photomise.utilities.logging import setup_logging
+from photomise.utilities.photo import Photo
 
-logging, console = setup_logging()
+logger = setup_logging()
 
 
 class ProjectDB(DatabaseManager):
-    def __init__(self, project_name: str=None, project_path: Path=None):
+    def __init__(self, project_name: str = "", project_path: str = ""):
         """
         Initialize the project database object.
 
@@ -47,6 +52,7 @@ class ProjectDB(DatabaseManager):
         self._posts = self.get_table("posts")
         self._accounts = self.get_table("accounts")
         self._rankings = self.get_table("rankings")
+        self._query = Query()
 
     # Settings table methods
     @property
@@ -59,9 +65,19 @@ class ProjectDB(DatabaseManager):
         """
         return self._settings.all()[0] if self._settings.all() else {}
 
-    def upsert_settings(self, settings: dict):
+    def update_settings(self, settings: dict):
         """
-        Update or insert settings into the database.
+        Update settings into the database.
+
+        Args:
+            settings (dict): Settings data.
+
+        """
+        return self._settings.update(settings, self._query.doc_id == 1)
+
+    def insert_settings(self, settings: dict):
+        """
+        Insert settings into the database.
 
         Args:
             settings (dict): Settings data.
@@ -69,10 +85,10 @@ class ProjectDB(DatabaseManager):
         Returns:
             bool: True if the settings were updated, False if they were inserted.
         """
-        return self._settings.upsert(settings, self._query.doc_id == 1)
+        return self._settings.insert(settings)
 
     # Accounts table methods
-    def get_bluesky_user(self):
+    def get_bluesky_user(self) -> str | None:
         """
         Get the Bluesky user from the database.
 
@@ -80,7 +96,11 @@ class ProjectDB(DatabaseManager):
             str: Bluesky username.
         """
         try:
-            return self._accounts.get(self._query.where == "Bluesky")["user"]
+            entry = self._accounts.get(self._query.where == "Bluesky")
+            if entry:
+                return entry["user"]
+            else:
+                return None
         except TypeError:
             return None
 
@@ -94,7 +114,16 @@ class ProjectDB(DatabaseManager):
         self._accounts.insert({"where": "Bluesky", "user": user})
 
     # Events table methods
-    def get_event(self, event_name: str):
+    def count_events(self):
+        """
+        Count the number of events in the database.
+
+        Returns:
+            int: Number of events.
+        """
+        return len(self._events)
+
+    def get_event(self, event_name: str) -> Event:
         """
         Get an event from the database.
 
@@ -104,10 +133,10 @@ class ProjectDB(DatabaseManager):
         Returns:
             dict: Event data.
         """
-        logging.info(f"[{self.project_name}] Getting event: {event_name}")
-        return self._events.get(self._query.event == event_name)
+        logger.info(f"[{self.project_name}] Getting event: {event_name}")
+        return Event.from_dict(self._events.get(self._query.name == event_name))
 
-    def get_events(self, event_names: list = None):
+    def get_events(self, event_names: list = []) -> list[Event]:
         """
         Get some or all events from the database.
 
@@ -119,11 +148,12 @@ class ProjectDB(DatabaseManager):
         """
         events = {}
         for document in self._events.all():
-            if not event_names or document["event"] in event_names:
-                events[document["event"]] = document
+            event = Event.from_dict(document)
+            if not event_names or event.name in event_names:
+                events[event.name] = event
         return events
 
-    def get_events_without_bluesky_posted(self):
+    def get_events_without_bluesky_posted(self) -> list[Event]:
         """
         Get events that have not been posted to Bluesky.
 
@@ -135,13 +165,17 @@ class ProjectDB(DatabaseManager):
         for post in self._posts.all():
             if post["where"] == "Bluesky":
                 posted_events.append(post["event"])
-        for event in self._events.all():
-            if event["event"] not in posted_events:
-                events[event["event"]] = event
+        for document in self._events.all():
+            event = Event.from_dict(document)
+            if event.name not in posted_events:
+                events[event.name] = event
         return events
 
     def same_event(
-        self, date: pendulum, location: str, max_time_delta_in_hours: int = 8
+        self,
+        date: pendulum.DateTime,
+        location: Location,
+        max_time_delta_in_hours: int = None,
     ):
         """
         Check if an event exists in the database with the same location and within a certain time delta.
@@ -154,13 +188,59 @@ class ProjectDB(DatabaseManager):
         Returns:
             tuple: Date of the event, event data, and True if the event exists, False otherwise.
         """
-        for item in self._events.all():
-            db_date = pendulum.from_timestamp(item["date"])
-            time_delta = date.diff(db_date).in_hours()
+        # get project settings for time delta and radius; fall back to shared/global DB
+        settings = self.settings or {}
+        if max_time_delta_in_hours is None:
+            max_time_delta_in_hours = settings.get("event_time_delta_hours", 8)
 
-            if time_delta < max_time_delta_in_hours and location == item["location"]:
-                return db_date, item["event"], True
-        return date, None, False
+        # Prefer per-project radius for portability; fall back to shared DB
+        event_radius_meters = settings.get("event_radius_meters")
+        if event_radius_meters is None:
+            try:
+                shared_db = SharedDB()
+                shared_proj = shared_db.get_project(self.project_name)
+                event_radius_meters = (
+                    shared_proj.get("event_radius_meters") if shared_proj else 500
+                )
+                shared_db.close()
+            except Exception:
+                event_radius_meters = 500
+        event_radius_km = event_radius_meters / 1000.0
+
+        from geopy.distance import great_circle
+
+        for item in self._events.all():
+            event = Event.from_dict(item)
+            # Use absolute epoch-second difference to avoid timezone/offset issues
+            try:
+                photo_ts = int(date.int_timestamp)
+            except Exception:
+                # fallback to pendulum conversion
+                photo_ts = int(date.timestamp())
+
+            try:
+                event_ts = int(event.date)
+            except Exception:
+                event_ts = int(pendulum.from_timestamp(event.date).int_timestamp)
+
+            time_delta_hours = abs(photo_ts - event_ts) / 3600.0
+            # check temporal proximity first
+            if time_delta_hours <= max_time_delta_in_hours:
+                # check spatial proximity between event coordinates and provided location
+                try:
+                    event_coords = (event.latitude, event.longitude)
+                    location_coords = (location.latitude, location.longitude)
+                    distance_km = great_circle(event_coords, location_coords).kilometers
+                    if distance_km <= event_radius_km:
+                        return event, True
+                except Exception:
+                    # fallback to name matching if coordinates missing
+                    if (
+                        event.location == location.name
+                        or event.location == location._name
+                    ):
+                        return event, True
+        return None, False
 
     def is_event(self, date: pendulum.DateTime):
         """
@@ -174,7 +254,7 @@ class ProjectDB(DatabaseManager):
         """
         return self._events.search(self._query["date"] == date.timestamp())
 
-    def upsert_event(self, event: dict, path: str = None):
+    def upsert_event(self, event: Event, path: str = "") -> List[int]:
         """
         Update or insert an event into the database.
 
@@ -186,35 +266,77 @@ class ProjectDB(DatabaseManager):
             bool: True if the event was updated, False if it was inserted.
         """
         if path:
-            event["photos"] = event.get("photos", []) + [path]
+            event.photos = event.photos + [path]
 
-        updated = self._events.upsert(event, self._query.event == event["event"])
+        # Ensure event.date is stored as UTC epoch seconds (int)
+        try:
+            # If event.date is a pendulum DateTime or similar
+            event_ts = int(event.date)
+        except Exception:
+            try:
+                # If it's a float timestamp
+                event_ts = int(float(event.date))
+            except Exception:
+                # As a last resort, leave as-is
+                event_ts = event.date
+
+        event.date = event_ts
+        logger.debug(f"Upserting event: {event.name} with date {event.date}")
+        existing = self._events.get(
+            (self._query.name == event.name) & (self._query.date == event.date)
+        )
+        logger.debug(f"Found existing event: {existing}")
+
+        updated = self._events.upsert(
+            event.to_dict(),
+            self._query.name == event.name,
+        )
         return updated
 
-    def remove_photo_from_event(
-        self, events: list, photo_path: str, keep_idx: int = None
-    ) -> None:
+    def remove_event(self, event: Event):
         """
-        Remove a photo from all events except the one specified.
+        Remove an event from the database.
 
         Args:
-            events (list): List of events.
-            photo_path (str): Path to the photo.
-            keep_idx (int): Index of the event to keep the photo in. Will remove the photo from all events if 0.
+            event (dict): Event data.
         """
-        if keep_idx:
-            keep_event = events[int(keep_idx) - 1]
-        else:
-            keep_event = {"event": None}
-        for event in events:
-            if event["event"] != keep_event["event"]:
-                photos = event.get("photos", [])
-                photos.remove(photo_path)
-                self._events.update(
-                    {"photos": photos}, self._query.event == event["event"]
-                )
+        self._events.remove(self._query.name == event.name)
 
-    def find_events_with_photo(self, photo_path: str) -> list:
+    def get_photos_without_event(self):
+        """
+        Get photos that are not associated with an event.
+
+        Returns:
+            list: List of photos.
+        """
+
+        all_event_photos = []
+        no_event_photos = []
+        for event in self._events.all():
+            all_event_photos.extend(event["photos"])
+
+        for photo in self._photos.all():
+            if photo["path"] not in all_event_photos:
+                print(f"Photo {photo['path']} not in any event")
+                no_event_photos.append(Photo.from_dict(photo))
+
+        return no_event_photos
+
+    def remove_photo_from_event(self, event: Event, photo_path: str) -> None:
+        """
+        Remove a photo from specified event.
+
+        Args:
+            events: List of events.
+            photo_path: Path to the photo.
+        """
+
+        print(f"Removing photo from {event.name}")
+        photos = event.photos
+        photos.remove(photo_path)
+        self._events.update({"photos": event.photos}, self._query.event == event.name)
+
+    def find_events_with_photo(self, photo_path: str) -> list[Event]:
         """
         Find all events containing a specific photo.
 
@@ -225,13 +347,23 @@ class ProjectDB(DatabaseManager):
             list: List of events containing the photo.
         """
         events_with_photo = []
-        for event in self._events.all():
-            if photo_path in event.get("photos", []):
+        for event_dict in self._events.all():
+            event = Event.from_dict(event_dict)
+            if photo_path in event.photos:
                 events_with_photo.append(event)
         return events_with_photo
 
     # Photos table methods
-    def get_photo(self, path: str):
+    def count_photos(self):
+        """
+        Count the number of photos in the database.
+
+        Returns:
+            int: Number of photos.
+        """
+        return len(self._photos)
+
+    def get_photo(self, path: str) -> Photo | bool:
         """
         Get a photo from the database by relative path.
 
@@ -239,11 +371,19 @@ class ProjectDB(DatabaseManager):
             path (str): Path to the photo.
 
         Returns:
-            dict: Photo data.
+            Photo: Photo object.
         """
-        return self._photos.get(self._query.path == path)
 
-    def get_photos_by_event(self, event: str):
+        from_db = self._photos.get(self._query.path == path)
+        if not from_db:
+            return Photo(
+                path=path,
+                quality=self.settings.get("quality", 80),
+            )
+
+        return Photo.from_dict(from_db)
+
+    def get_photos_by_event(self, event: str) -> list[Photo]:
         """
         Get all the photos for a specific event.
 
@@ -256,31 +396,40 @@ class ProjectDB(DatabaseManager):
         photos = []
         for photo in self._photos.all():
             if event in photo.get("events", []):
-                photos.append(photo)
+                photos.append(Photo.from_dict(photo))
         return photos
 
-    def upsert_photo(self, photo: dict):
+    def upsert_photo(self, photo: Photo) -> list[int]:
         """
         Update or insert a photo into the database.
 
         Args:
-            photo (dict): Photo data.
+            photo (Photo): Photo data.
 
         Returns:
-            bool: True if the photo was updated, False if it was inserted.
+            List[int]: Document IDs that were updated/inserted.
         """
-        return self._photos.upsert(photo, self._query.path == photo["path"])
+        return self._photos.upsert(photo.to_dict(), self._query.path == photo.path)
 
-    def remove_photo(self, photo: dict):
+    def remove_photo(self, photo: Photo):
         """
         Remove a photo from the database.
 
         Args:
             photo (dict): Photo data.
         """
-        self._photos.remove(self._query.path == photo["path"])
+        self._photos.remove(self._query.path == photo.path)
 
     # Posts table methods
+    def count_posts(self):
+        """
+        Count the number of posts in the database.
+
+        Returns:
+            int: Number of posts.
+        """
+        return len(self._posts)
+
     def set_post(self, event_name, user, platform, uri):
         """
         Set a post in the database.
@@ -309,6 +458,15 @@ class ProjectDB(DatabaseManager):
         )
 
     # Rankings table methods
+    def count_rankings(self):
+        """
+        Count the number of rankings in the database.
+
+        Returns:
+            int: Number of rankings.
+        """
+        return len(self._rankings)
+
     def get_rankings_by_event(self, event: str):
         """
         Get rankings for a specific event.
@@ -321,7 +479,7 @@ class ProjectDB(DatabaseManager):
         """
         rankings = self._rankings.search(self._query.event == event)
         # sort rankings by rank
-        logging.debug(f"Rankings from database for {event} from DB: {rankings}")
+        logger.debug(f"Rankings from database for {event} from DB: {rankings}")
         rankings = sorted(rankings, key=lambda x: x["rank"])
         return rankings
 
@@ -336,7 +494,7 @@ class ProjectDB(DatabaseManager):
             int: Rank of the photo.
         """
         rankings = self._rankings.get(self._query.path == path)
-        logging.debug(f"Rankings from database for {path}: {rankings}")
+        logger.debug(f"Rankings from database for {path}: {rankings}")
         return rankings.get("rank", 0) if rankings else 0
 
     def upsert_rankings(self, rankings: dict):
